@@ -81,54 +81,97 @@ import json
 # Background task to process incoming voice messages
 def process_voice_message(data):
     print("Processing incoming data in background...")
-    
-    # Meta Webhook payload parsing (Assuming WhatsApp Cloud API format)
     try:
+        obj = data.get("object")
         entry = data.get("entry", [])[0]
-        changes = entry.get("changes", [])[0]
-        value = changes.get("value", {})
         
-        # Check if it's a message
-        if "messages" in value:
-            message = value["messages"][0]
-            phone_number_id = value["metadata"]["phone_number_id"]
-            sender_id = message["from"]
+        # ==========================================
+        # 1. MESSENGER WEBHOOK
+        # ==========================================
+        if obj == "page":
+            messaging = entry.get("messaging", [])[0]
+            sender_id = messaging["sender"]["id"]
+            message = messaging.get("message", {})
             
-            # If the user sent an audio message (Voice Note)
-            if message.get("type") == "audio":
-                media_id = message["audio"]["id"]
-                print(f"Received audio from {sender_id}. Media ID: {media_id}")
+            # Check if it has an audio attachment
+            attachments = message.get("attachments", [])
+            if attachments and attachments[0]["type"] == "audio":
+                audio_url = attachments[0]["payload"]["url"]
+                print(f"Received audio from Messenger user {sender_id}.")
                 
-                # 1. Download Audio
-                input_audio_path = f"incoming_{media_id}.ogg"
-                download_audio_from_meta(media_id, ACCESS_TOKEN, input_audio_path)
+                # Download Audio
+                input_audio_path = f"incoming_{sender_id}.mp4"
+                import requests
+                res = requests.get(audio_url)
+                with open(input_audio_path, "wb") as f:
+                    f.write(res.content)
                 
-                # 2. Speech to Text (STT) using Gemini
-                print("Converting Speech to Text using Gemini...")
+                # Speech to Text, AI, Text to Speech
                 user_text = speech_to_text(input_audio_path, os.getenv("GEMINI_API_KEY"))
-                print(f"User said: {user_text}")
-                
-                # 3. AI Brain (LangChain)
-                print("Generating AI Response...")
                 ai_reply = process_text_with_ai(user_text, user_id=sender_id)
-                print(f"AI Output: {ai_reply}")
-                
-                # 4. Text to Speech (TTS)
-                print("Converting Text to Speech...")
-                output_audio_path = f"reply_{media_id}.mp3"
+                output_audio_path = f"reply_{sender_id}.mp3"
                 text_to_speech(ai_reply, os.getenv("ELEVENLABS_API_KEY"), output_audio_path)
                 
-                # 5. Send Audio Reply back to User via Meta API
-                send_audio_reply_whatsapp(phone_number_id, sender_id, output_audio_path)
+                # Send back via Messenger
+                send_audio_reply_messenger(sender_id, output_audio_path)
                 
-                # Cleanup local files
+                # Cleanup
                 if os.path.exists(input_audio_path): os.remove(input_audio_path)
                 if os.path.exists(output_audio_path): os.remove(output_audio_path)
-                
             else:
-                print("Received a non-audio message. Ignoring.")
+                print("Messenger message is not audio.")
+                
+        # ==========================================
+        # 2. WHATSAPP WEBHOOK
+        # ==========================================
+        elif obj == "whatsapp_business_account":
+            changes = entry.get("changes", [])[0]
+            value = changes.get("value", {})
+            
+            if "messages" in value:
+                message = value["messages"][0]
+                phone_number_id = value["metadata"]["phone_number_id"]
+                sender_id = message["from"]
+                
+                if message.get("type") == "audio":
+                    media_id = message["audio"]["id"]
+                    print(f"Received audio from WhatsApp user {sender_id}.")
+                    
+                    input_audio_path = f"incoming_{media_id}.ogg"
+                    download_audio_from_meta(media_id, ACCESS_TOKEN, input_audio_path)
+                    
+                    user_text = speech_to_text(input_audio_path, os.getenv("GEMINI_API_KEY"))
+                    ai_reply = process_text_with_ai(user_text, user_id=sender_id)
+                    
+                    output_audio_path = f"reply_{media_id}.mp3"
+                    text_to_speech(ai_reply, os.getenv("ELEVENLABS_API_KEY"), output_audio_path)
+                    
+                    send_audio_reply_whatsapp(phone_number_id, sender_id, output_audio_path)
+                    
+                    if os.path.exists(input_audio_path): os.remove(input_audio_path)
+                    if os.path.exists(output_audio_path): os.remove(output_audio_path)
+                else:
+                    print("WhatsApp message is not audio.")
+                    
     except Exception as e:
         print(f"Error processing message: {e}")
+
+def send_audio_reply_messenger(recipient_id, audio_path):
+    """Sends audio reply via Facebook Messenger API."""
+    import requests
+    url = f"https://graph.facebook.com/v19.0/me/messages?access_token={ACCESS_TOKEN}"
+    payload = {
+        "recipient": json.dumps({"id": recipient_id}),
+        "message": json.dumps({"attachment": {"type": "audio", "payload": {"is_reusable": True}}})
+    }
+    print("Uploading and sending audio to Messenger...")
+    with open(audio_path, "rb") as f:
+        files = {"filedata": (audio_path, f, "audio/mpeg")}
+        send_res = requests.post(url, data=payload, files=files)
+        if send_res.status_code == 200:
+            print("Successfully sent voice reply to Messenger user!")
+        else:
+            print("Failed to send to Messenger:", send_res.text)
 
 def send_audio_reply_whatsapp(phone_number_id, recipient_id, audio_path):
     """Uploads the generated audio and sends it via WhatsApp Business API."""
