@@ -12,14 +12,14 @@ load_dotenv()
 
 # ১. Initialize LLM (ব্রেইন)
 llm = ChatGoogleGenerativeAI(
-    model="gemini-1.5-flash", 
+    model="gemini-3.5-flash", 
     google_api_key=os.getenv("GEMINI_API_KEY"),
     temperature=0.7
 )
 
 # ২. Initialize Embeddings (টেক্সটকে ভেক্টরে রূপান্তর করার জন্য)
 embeddings = GoogleGenerativeAIEmbeddings(
-    model="models/embedding-001",
+    model="models/gemini-embedding-2",
     google_api_key=os.getenv("GEMINI_API_KEY")
 )
 

@@ -40,7 +40,7 @@ def speech_to_text(audio_path: str, api_key: str):
         audio_file = genai.upload_file(path=audio_path)
         
         # Ask Gemini to transcribe it
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        model = genai.GenerativeModel("gemini-3.5-flash")
         prompt = "Listen to this audio and accurately transcribe it in Bengali. Only return the text, nothing else."
         response = model.generate_content([prompt, audio_file])
         
