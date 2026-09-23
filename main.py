@@ -138,7 +138,8 @@ def process_voice_message(data):
                     print(f"Received audio from WhatsApp user {sender_id}.")
                     
                     input_audio_path = f"incoming_{media_id}.ogg"
-                    download_audio_from_meta(media_id, ACCESS_TOKEN, input_audio_path)
+                    whatsapp_token = os.getenv("WHATSAPP_ACCESS_TOKEN", "")
+                    download_audio_from_meta(media_id, whatsapp_token, input_audio_path)
                     
                     user_text = speech_to_text(input_audio_path, os.getenv("GEMINI_API_KEY"))
                     ai_reply = process_text_with_ai(user_text, user_id=sender_id)
@@ -159,7 +160,8 @@ def process_voice_message(data):
 def send_audio_reply_messenger(recipient_id, audio_path):
     """Sends audio reply via Facebook Messenger API."""
     import requests
-    url = f"https://graph.facebook.com/v19.0/me/messages?access_token={ACCESS_TOKEN}"
+    messenger_token = os.getenv("MESSENGER_ACCESS_TOKEN", "")
+    url = f"https://graph.facebook.com/v19.0/me/messages?access_token={messenger_token}"
     payload = {
         "recipient": json.dumps({"id": recipient_id}),
         "message": json.dumps({"attachment": {"type": "audio", "payload": {"is_reusable": True}}})
@@ -176,10 +178,11 @@ def send_audio_reply_messenger(recipient_id, audio_path):
 def send_audio_reply_whatsapp(phone_number_id, recipient_id, audio_path):
     """Uploads the generated audio and sends it via WhatsApp Business API."""
     import requests
+    whatsapp_token = os.getenv("WHATSAPP_ACCESS_TOKEN", "")
     
     # URL for uploading media
     upload_url = f"https://graph.facebook.com/v18.0/{phone_number_id}/media"
-    headers = {"Authorization": f"Bearer {ACCESS_TOKEN}"}
+    headers = {"Authorization": f"Bearer {whatsapp_token}"}
     
     print("Uploading audio to Meta...")
     with open(audio_path, "rb") as f:
