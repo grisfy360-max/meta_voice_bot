@@ -4,6 +4,7 @@ from langchain_community.vectorstores import Chroma
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from operator import itemgetter
+from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables.history import RunnableWithMessageHistory
 from langchain_community.chat_message_histories import ChatMessageHistory
 from dotenv import load_dotenv
@@ -53,6 +54,7 @@ rag_chain = (
     {"context": itemgetter("input") | retriever | format_docs, "input": itemgetter("input"), "chat_history": itemgetter("chat_history")}
     | prompt
     | llm
+    | StrOutputParser()
 )
 
 # ৬. Memory (চ্যাট হিস্ট্রি মনে রাখার জন্য)
@@ -69,7 +71,6 @@ conversational_rag_chain = RunnableWithMessageHistory(
     get_session_history,
     input_messages_key="input",
     history_messages_key="chat_history",
-    output_messages_key="answer",
 )
 
 def process_text_with_ai(user_input: str, user_id: str = "default_user"):
@@ -82,7 +83,8 @@ def process_text_with_ai(user_input: str, user_id: str = "default_user"):
             {"input": user_input},
             config={"configurable": {"session_id": user_id}}
         )
-        return response["answer"]
+        return response
     except Exception as e:
         print(f"Error in LangChain agent: {e}")
         return "দুঃখিত, আমি আপনার কথাটি ঠিক বুঝতে পারিনি। আরেকবার বলবেন কি?"
+
