@@ -119,8 +119,8 @@ def process_voice_message(data):
                 # Speech to Text, AI, Text to Speech
                 user_text = speech_to_text(input_audio_path, os.getenv("GEMINI_API_KEY"))
                 ai_reply = process_text_with_ai(user_text, user_id=sender_id)
-                output_audio_path = f"reply_{sender_id}.mp3"
-                text_to_speech(ai_reply, os.getenv("ELEVENLABS_API_KEY"), output_audio_path)
+                output_audio_path = f"reply_{sender_id}.wav"
+                text_to_speech(ai_reply, os.getenv("GEMINI_API_KEY"), output_audio_path)
                 
                 # Send back via Messenger
                 send_audio_reply_messenger(sender_id, output_audio_path)
@@ -158,8 +158,8 @@ def process_voice_message(data):
                     user_text = speech_to_text(input_audio_path, os.getenv("GEMINI_API_KEY"))
                     ai_reply = process_text_with_ai(user_text, user_id=sender_id)
                     
-                    output_audio_path = f"reply_{media_id}.mp3"
-                    text_to_speech(ai_reply, os.getenv("ELEVENLABS_API_KEY"), output_audio_path)
+                    output_audio_path = f"reply_{media_id}.wav"
+                    text_to_speech(ai_reply, os.getenv("GEMINI_API_KEY"), output_audio_path)
                     
                     send_audio_reply_whatsapp(phone_number_id, sender_id, output_audio_path)
                     

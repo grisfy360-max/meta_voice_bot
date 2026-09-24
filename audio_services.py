@@ -54,17 +54,66 @@ def speech_to_text(audio_path: str, api_key: str):
         return ""
 
 
+
 def text_to_speech(text: str, api_key: str, save_path: str):
-    """
-    Converts AI's text response back to speech using completely free gTTS (Google TTS).
-    The api_key argument is kept for compatibility but ignored here.
-    """
+    from google import genai
+    from google.genai import types
+    import wave
+    
     try:
-        # 'bn' stands for Bengali
+        client = genai.Client(api_key=api_key)
+        
+        # Apply the Dermatologist persona context
+        full_prompt = (
+            "Context: You are a professional, highly educated, and friendly female dermatologist (age 28). "
+            "Your tone is empathetic, knowledgeable, and extremely natural, just like a doctor explaining skincare to a patient in a clinic or a modern YouTube video. "
+            "Pacing: Conversational, with slight natural pauses for emphasis. "
+            "Language: Native Bengali (Bangla) mixed with English skincare terms. "
+            "Do NOT sound like an AI or news anchor. Sound like a real human doctor.\n\n"
+            f"Text to speak:\n{text}"
+        )
+        
+        config = types.GenerateContentConfig(
+            response_modalities=["AUDIO"],
+            speech_config=types.SpeechConfig(
+                voice_config=types.VoiceConfig(
+                    prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                        voice_name="Puck",
+                    )
+                )
+            )
+        )
+        
+        print("Generating TTS with Gemini (Puck)...")
+        try:
+            response = client.models.generate_content(
+                model='gemini-3.1-flash-tts-preview',
+                contents=full_prompt,
+                config=config
+            )
+        except Exception as e:
+            print("Quota exceeded or error with 3.1, falling back to 2.5:", e)
+            response = client.models.generate_content(
+                model='gemini-2.5-flash-preview-tts',
+                contents=full_prompt,
+                config=config
+            )
+            
+        for part in response.candidates[0].content.parts:
+            if part.inline_data:
+                with wave.open(save_path, "wb") as wav_file:
+                    wav_file.setnchannels(1)
+                    wav_file.setsampwidth(2)
+                    wav_file.setframerate(24000)
+                    wav_file.writeframes(part.inline_data.data)
+                print("Gemini TTS audio saved to", save_path)
+                return save_path
+                
+    except Exception as e:
+        print("Gemini TTS Error:", e)
+        # Fallback to gTTS if Gemini TTS fails
+        from gtts import gTTS
         tts = gTTS(text=text, lang='bn', slow=False)
         tts.save(save_path)
-    except Exception as e:
-        print("TTS Error:", e)
         
     return save_path
-
