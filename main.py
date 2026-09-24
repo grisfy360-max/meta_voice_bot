@@ -93,6 +93,9 @@ def process_voice_message(data):
             sender_id = messaging["sender"]["id"]
             message = messaging.get("message", {})
             
+            # Debug the payload
+            print(f"DEBUG Messenger payload: {message}")
+            
             # Check if it has an audio attachment
             attachments = message.get("attachments", [])
             if attachments and attachments[0]["type"] == "audio":
