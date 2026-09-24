@@ -96,8 +96,10 @@ def process_voice_message(data):
             # Debug the payload
             print(f"DEBUG Messenger payload: {message}")
             
-            # Check if it has an audio attachment
+            # Check if it has an audio attachment or text
             attachments = message.get("attachments", [])
+            text_body = message.get("text")
+            
             if attachments and attachments[0]["type"] == "audio":
                 audio_url = attachments[0]["payload"]["url"]
                 print(f"Received audio from Messenger user {sender_id}.")
@@ -121,8 +123,12 @@ def process_voice_message(data):
                 # Cleanup
                 if os.path.exists(input_audio_path): os.remove(input_audio_path)
                 if os.path.exists(output_audio_path): os.remove(output_audio_path)
+            elif text_body:
+                print(f"Received text from Messenger user {sender_id}.")
+                ai_reply = process_text_with_ai(text_body, user_id=sender_id)
+                send_text_reply_messenger(sender_id, ai_reply)
             else:
-                print("Messenger message is not audio.")
+                print("Messenger message is not audio or text.")
                 
         # ==========================================
         # 2. WHATSAPP WEBHOOK
@@ -154,11 +160,53 @@ def process_voice_message(data):
                     
                     if os.path.exists(input_audio_path): os.remove(input_audio_path)
                     if os.path.exists(output_audio_path): os.remove(output_audio_path)
+                elif message.get("type") == "text":
+                    text_body = message["text"]["body"]
+                    print(f"Received text from WhatsApp user {sender_id}.")
+                    ai_reply = process_text_with_ai(text_body, user_id=sender_id)
+                    send_text_reply_whatsapp(phone_number_id, sender_id, ai_reply)
                 else:
-                    print("WhatsApp message is not audio.")
+                    print("WhatsApp message is not audio or text.")
                     
     except Exception as e:
         print(f"Error processing message: {e}")
+
+
+def send_text_reply_messenger(recipient_id, text):
+    import requests
+    import os
+    messenger_token = os.getenv("MESSENGER_ACCESS_TOKEN", "")
+    url = f"https://graph.facebook.com/v19.0/me/messages?access_token={messenger_token}"
+    payload = {
+        "recipient": {"id": recipient_id},
+        "message": {"text": text}
+    }
+    print("Sending text to Messenger...")
+    send_res = requests.post(url, json=payload)
+    if send_res.status_code == 200:
+        print("Successfully sent text reply to Messenger user!")
+    else:
+        print("Failed to send text to Messenger:", send_res.text)
+
+def send_text_reply_whatsapp(phone_number_id, recipient_id, text):
+    import requests
+    import os
+    whatsapp_token = os.getenv("WHATSAPP_ACCESS_TOKEN", "")
+    send_url = f"https://graph.facebook.com/v18.0/{phone_number_id}/messages"
+    headers = {"Authorization": f"Bearer {whatsapp_token}"}
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": recipient_id,
+        "type": "text",
+        "text": {"body": text}
+    }
+    print("Sending text to WhatsApp...")
+    send_res = requests.post(send_url, headers=headers, json=payload)
+    if send_res.status_code == 200:
+        print("Successfully sent text reply to WhatsApp user!")
+    else:
+        print("Failed to send text to WhatsApp:", send_res.text)
+
 
 def send_audio_reply_messenger(recipient_id, audio_path):
     """Sends audio reply via Facebook Messenger API."""
