@@ -38,6 +38,10 @@ def speech_to_text(audio_path: str, api_key: str):
     try:
         # Upload the audio file to Gemini
         audio_file = genai.upload_file(path=audio_path)
+        import time
+        while audio_file.state.name == 'PROCESSING':
+            time.sleep(1)
+            audio_file = genai.get_file(audio_file.name)
         
         # Ask Gemini to transcribe it
         model = genai.GenerativeModel("gemini-3.5-flash")
@@ -63,3 +67,4 @@ def text_to_speech(text: str, api_key: str, save_path: str):
         print("TTS Error:", e)
         
     return save_path
+
