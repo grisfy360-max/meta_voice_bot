@@ -96,6 +96,11 @@ def process_voice_message(data):
             # Debug the payload
             print(f"DEBUG Messenger payload: {message}")
             
+            # Ignore messages sent by the bot itself (echos)
+            if message.get("is_echo"):
+                print("Ignored echo message from bot.")
+                return
+            
             # Check if it has an audio attachment or text
             attachments = message.get("attachments", [])
             text_body = message.get("text")
