@@ -50,42 +50,12 @@ def preview_voice_post(req: PreviewRequest):
     if not api_key:
         return Response(content="Missing API Key", status_code=500)
         
-    # We will temporarily override config.json's persona inside text_to_speech using a trick, 
-    # or just let text_to_speech take persona as an argument. 
-    # Wait, text_to_speech in audio_services reads from config.json. 
-    # Let's temporarily save it? No, just pass it!
-    # I'll just write a custom inline call to Gemini TTS here for the preview!
-    
-    from google import genai
-    from google.genai import types
-    import wave
-    
-    full_prompt = f"{req.persona}\n\nText to speak:\nহ্যালো! আমি আপনার এআই অ্যাসিস্ট্যান্ট। আমার ভয়েস ঠিক এরকম শোনাবে।"
+    text = "হ্যালো! আমি আপনার এআই অ্যাসিস্ট্যান্ট। আমার ভয়েস ঠিক এরকম শোনাবে।"
     file_path = f"preview_{req.voice}_{int(time.time())}.wav"
     
     try:
-        client = genai.Client(api_key=api_key)
-        config = types.GenerateContentConfig(
-            response_modalities=["AUDIO"],
-            speech_config=types.SpeechConfig(
-                voice_config=types.VoiceConfig(
-                    prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=req.voice)
-                )
-            )
-        )
-        response = client.models.generate_content(
-            model='gemini-3.1-flash-tts-preview',
-            contents=full_prompt,
-            config=config
-        )
-        for part in response.candidates[0].content.parts:
-            if part.inline_data:
-                with wave.open(file_path, "wb") as wav_file:
-                    wav_file.setnchannels(1)
-                    wav_file.setsampwidth(2)
-                    wav_file.setframerate(24000)
-                    wav_file.writeframes(part.inline_data.data)
-                return FileResponse(file_path, media_type="audio/wav")
+        audio_path = text_to_speech(text, api_key, file_path, override_voice=req.voice, override_persona=req.persona)
+        return FileResponse(audio_path, media_type="audio/wav")
     except Exception as e:
         return Response(content=str(e), status_code=500)
 
@@ -323,6 +293,7 @@ async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+
 
 
 

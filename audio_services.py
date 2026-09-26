@@ -1,4 +1,4 @@
-import os
+﻿import os
 import requests
 
 def download_audio_from_meta(media_id: str, access_token: str, save_path: str):
@@ -55,7 +55,7 @@ def speech_to_text(audio_path: str, api_key: str):
 
 
 
-def text_to_speech(text: str, api_key: str, save_path: str, override_voice: str = None):
+def text_to_speech(text: str, api_key: str, save_path: str, override_voice: str = None, override_persona: str = None):
     from google import genai
     from google.genai import types
     import wave
@@ -71,7 +71,7 @@ def text_to_speech(text: str, api_key: str, save_path: str, override_voice: str 
         except:
             cfg = {}
             
-        persona = cfg.get("persona", "You are a helpful assistant.")
+        persona = override_persona if override_persona else cfg.get("persona", "You are a helpful assistant.")
         voice_name = override_voice if override_voice else cfg.get("voice", "Puck")
         
         full_prompt = f"{persona}\n\nText to speak:\n{text}"
@@ -120,4 +120,5 @@ def text_to_speech(text: str, api_key: str, save_path: str, override_voice: str 
         tts.save(save_path)
         
     return save_path
+
 
