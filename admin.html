@@ -191,6 +191,61 @@
                         <button class="w-full py-2 bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-md font-medium text-sm hover:bg-gray-200 dark:hover:bg-gray-600 transition">Use Template</button>
                     </div>
                 </div>
+                
+                <!-- Visual Workflow Map -->
+                <div x-show="selectedTemplate" x-transition class="mt-10 p-6 bg-gray-50 dark:bg-gray-800/50 rounded-xl border border-gray-200 dark:border-gray-700">
+                    <h3 class="text-lg font-bold text-gray-800 dark:text-gray-100 mb-6 flex items-center gap-2">
+                        <svg class="w-5 h-5 text-n8n" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"></path></svg>
+                        Visual Data Flow Map
+                    </h3>
+                    
+                    <div class="flex flex-col md:flex-row items-center justify-between gap-4">
+                        <!-- Node 1: Input -->
+                        <div class="flex flex-col items-center w-full md:w-1/4">
+                            <div class="w-16 h-16 bg-blue-100 dark:bg-blue-900/40 border-2 border-blue-400 dark:border-blue-600 rounded-lg flex items-center justify-center text-blue-600 dark:text-blue-400 z-10 shadow-sm">
+                                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
+                            </div>
+                            <span class="mt-3 font-semibold text-gray-700 dark:text-gray-200">Meta Webhook</span>
+                            <span class="text-xs text-gray-500 dark:text-gray-400 text-center mt-1">Receives User Message</span>
+                        </div>
+                        
+                        <!-- Arrow -->
+                        <div class="hidden md:block flex-1 h-0.5 bg-gray-300 dark:bg-gray-600 relative">
+                            <div class="absolute right-0 -top-1.5 w-3 h-3 border-t-2 border-r-2 border-gray-300 dark:border-gray-600 transform rotate-45"></div>
+                        </div>
+                        <div class="md:hidden w-0.5 h-8 bg-gray-300 dark:bg-gray-600 relative">
+                            <div class="absolute bottom-0 -left-1.5 w-3 h-3 border-b-2 border-r-2 border-gray-300 dark:border-gray-600 transform rotate-45"></div>
+                        </div>
+
+                        <!-- Node 2: AI Processing -->
+                        <div class="flex flex-col items-center w-full md:w-1/4">
+                            <div class="w-16 h-16 bg-n8n/10 border-2 border-n8n rounded-full flex items-center justify-center text-n8n z-10 shadow-sm relative">
+                                <div class="absolute -top-2 -right-2 bg-green-500 w-4 h-4 rounded-full border-2 border-white dark:border-gray-800"></div>
+                                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                            </div>
+                            <span class="mt-3 font-semibold text-gray-700 dark:text-gray-200" x-text="selectedTemplate === 'sales' ? 'Sales Engine' : (selectedTemplate === 'support' ? 'Support Logic' : 'Custom AI Node')"></span>
+                            <span class="text-xs text-gray-500 dark:text-gray-400 text-center mt-1">LLM + Vector DB</span>
+                        </div>
+
+                        <!-- Arrow -->
+                        <div class="hidden md:block flex-1 h-0.5 bg-gray-300 dark:bg-gray-600 relative">
+                            <div class="absolute right-0 -top-1.5 w-3 h-3 border-t-2 border-r-2 border-gray-300 dark:border-gray-600 transform rotate-45"></div>
+                        </div>
+                        <div class="md:hidden w-0.5 h-8 bg-gray-300 dark:bg-gray-600 relative">
+                            <div class="absolute bottom-0 -left-1.5 w-3 h-3 border-b-2 border-r-2 border-gray-300 dark:border-gray-600 transform rotate-45"></div>
+                        </div>
+
+                        <!-- Node 3: Action -->
+                        <div class="flex flex-col items-center w-full md:w-1/4">
+                            <div class="w-16 h-16 bg-purple-100 dark:bg-purple-900/40 border-2 border-purple-400 dark:border-purple-600 rounded-lg flex items-center justify-center text-purple-600 dark:text-purple-400 z-10 shadow-sm transform rotate-3">
+                                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z"></path></svg>
+                            </div>
+                            <span class="mt-3 font-semibold text-gray-700 dark:text-gray-200">Output Node</span>
+                            <span class="text-xs text-gray-500 dark:text-gray-400 text-center mt-1" x-text="selectedTemplate === 'sales' ? 'Generate Lead & Reply' : 'Resolve Issue & Reply'"></span>
+                        </div>
+                    </div>
+                </div>
+
             </div>
 
         </div>
@@ -201,6 +256,7 @@
         function dashboard() {
             return {
                 activeTab: 'config',
+                selectedTemplate: null,
                 isDark: true, // Default to dark theme
                 isAuthenticated: true,
                 passwordInput: '',
@@ -215,6 +271,7 @@
                 isPlaying: false,
                 
                 applyTemplate(type) {
+                    this.selectedTemplate = type;
                     if (type === 'sales') {
                         this.config.persona = "Context: You are a highly persuasive, energetic, and professional sales assistant. Your main goal is to pitch our services, highlight our unique benefits, and gently encourage the user to provide their phone number or place an order. Keep it conversational, confident, and very polite. Language: Pure Bengali.";
                     } else if (type === 'support') {
@@ -222,7 +279,7 @@
                     } else {
                         this.config.persona = "";
                     }
-                    this.activeTab = 'config';
+                    // this.activeTab = 'config';
                     this.saveMessage = 'Template applied! Click Save Changes.';
                     setTimeout(() => { this.saveMessage = ''; }, 3000);
                 },
