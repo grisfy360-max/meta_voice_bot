@@ -29,7 +29,7 @@ def get_config():
 
 @app.get("/", response_class=HTMLResponse)
 def dashboard():
-    return FileResponse("admin.html")
+    return FileResponse("admin.html", headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
 
 @app.get("/api/config")
 def read_config():
@@ -323,6 +323,7 @@ async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+
 
 
 
