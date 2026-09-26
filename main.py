@@ -35,6 +35,26 @@ def dashboard():
 def read_config():
     return get_config()
 
+@app.get("/api/preview_voice")
+def preview_voice(voice: str = "Puck"):
+    import os
+    import time
+    from audio_services import text_to_speech
+    
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        return Response(content="Missing API Key", status_code=500)
+        
+    text = "??????! ??? ????? ??? ???????????????? ???? ???? ??? ???? ???????"
+    # Unique file name to avoid concurrency issues
+    file_path = f"preview_{voice}_{int(time.time())}.wav"
+    
+    try:
+        audio_path = text_to_speech(text, api_key, file_path, override_voice=voice)
+        return FileResponse(audio_path, media_type="audio/wav")
+    except Exception as e:
+        return Response(content=str(e), status_code=500)
+
 @app.post("/api/config")
 async def update_config(request: Request):
     data = await request.json()
@@ -269,6 +289,7 @@ async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+
 
 
 
