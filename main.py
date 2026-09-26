@@ -1,4 +1,4 @@
-﻿import os
+import os
 from fastapi import FastAPI, Request, Response, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
@@ -26,6 +26,24 @@ from fastapi.responses import FileResponse
 def get_config():
     with open("config.json", "r", encoding="utf-8") as f:
         return json.load(f)
+
+
+import asyncio
+import httpx
+
+async def keep_alive():
+    while True:
+        try:
+            async with httpx.AsyncClient() as client:
+                await client.get("https://meta-voice-bot.onrender.com/")
+                print("Pinged self to stay awake")
+        except Exception as e:
+            print("Self-ping failed:", e)
+        await asyncio.sleep(840)  # Ping every 14 minutes (840 seconds)
+
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(keep_alive())
 
 @app.get("/", response_class=HTMLResponse)
 def dashboard():
