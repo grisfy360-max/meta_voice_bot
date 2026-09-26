@@ -204,7 +204,20 @@
                 async playPreview() {
                     this.isPlaying = true;
                     try {
-                        const url = `/api/preview_voice?voice=${this.config.voice}`;
+                        const response = await fetch('/api/preview_voice', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                voice: this.config.voice,
+                                persona: this.config.persona
+                            })
+                        });
+                        
+                        if (!response.ok) throw new Error('Preview failed');
+                        
+                        const blob = await response.blob();
+                        const url = URL.createObjectURL(blob);
+                        
                         const audio = this.$refs.audioPlayer;
                         audio.src = url;
                         await audio.play();
@@ -213,9 +226,9 @@
                     } catch (e) {
                         this.isPlaying = false;
                         console.error('Audio play error:', e);
+                        alert("Preview generation failed.");
                     }
                 },
-
                 async fetchConfig() {
                     if(!this.isAuthenticated) return;
                     try {
@@ -255,6 +268,7 @@
     </script>
 </body>
 </html>
+
 
 
 
