@@ -1,4 +1,4 @@
-import os
+﻿import os
 from fastapi import FastAPI, Request, Response, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
@@ -45,7 +45,7 @@ def preview_voice(voice: str = "Puck"):
     if not api_key:
         return Response(content="Missing API Key", status_code=500)
         
-    text = "??????! ??? ????? ??? ???????????????? ???? ???? ??? ???? ???????"
+    text = "হ্যালো! আমি আপনার এআই অ্যাসিস্ট্যান্ট। আমার ভয়েস ঠিক এরকম শোনাবে।"
     # Unique file name to avoid concurrency issues
     file_path = f"preview_{voice}_{int(time.time())}.wav"
     
@@ -289,6 +289,7 @@ async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+
 
 
 
