@@ -1,4 +1,4 @@
-﻿import os
+import os
 from fastapi import FastAPI, Request, Response, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
@@ -86,6 +86,10 @@ import json
 # Background task to process incoming voice messages
 def process_voice_message(data):
     print("Processing incoming data in background...")
+        try:
+            cfg = get_config()
+        except Exception:
+            cfg = {}
     try:
         obj = data.get("object")
         entry = data.get("entry", [])[0]
