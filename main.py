@@ -1,4 +1,4 @@
-import os
+﻿import os
 from fastapi import FastAPI, Request, Response, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
@@ -47,7 +47,7 @@ async def startup_event():
 
 @app.get("/", response_class=HTMLResponse)
 def dashboard():
-    return FileResponse("admin.html", headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
+    return FileResponse("dashboard.html", headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
 
 @app.get("/api/config")
 def read_config():
@@ -68,7 +68,7 @@ def preview_voice_post(req: PreviewRequest):
     if not api_key:
         return Response(content="Missing API Key", status_code=500)
         
-    text = "হ্যালো! আমি আপনার এআই অ্যাসিস্ট্যান্ট। আমার ভয়েস ঠিক এরকম শোনাবে।"
+    text = "à¦¹à§à¦¯à¦¾à¦²à§‹! à¦†à¦®à¦¿ à¦†à¦ªà¦¨à¦¾à¦° à¦à¦†à¦‡ à¦…à§à¦¯à¦¾à¦¸à¦¿à¦¸à§à¦Ÿà§à¦¯à¦¾à¦¨à§à¦Ÿà¥¤ à¦†à¦®à¦¾à¦° à¦­à§Ÿà§‡à¦¸ à¦ à¦¿à¦• à¦à¦°à¦•à¦® à¦¶à§‹à¦¨à¦¾à¦¬à§‡à¥¤"
     file_path = f"preview_{req.voice}_{int(time.time())}.wav"
     
     try:
