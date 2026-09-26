@@ -59,32 +59,35 @@ def text_to_speech(text: str, api_key: str, save_path: str):
     from google import genai
     from google.genai import types
     import wave
+    import json
     
     try:
         client = genai.Client(api_key=api_key)
         
-        # Apply the Dermatologist persona context
-        full_prompt = (
-            "Context: You are a professional, highly educated, and friendly female dermatologist (age 28). "
-            "Your tone is empathetic, knowledgeable, and extremely natural, just like a doctor explaining skincare to a patient in a clinic or a modern YouTube video. "
-            "Pacing: Conversational, with slight natural pauses for emphasis. "
-            "Language: Native Bengali (Bangla) mixed with English skincare terms. "
-            "Do NOT sound like an AI or news anchor. Sound like a real human doctor.\n\n"
-            f"Text to speak:\n{text}"
-        )
+        # Load config from UI
+        try:
+            with open("config.json", "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+        except:
+            cfg = {}
+            
+        persona = cfg.get("persona", "You are a helpful assistant.")
+        voice_name = cfg.get("voice", "Puck")
+        
+        full_prompt = f"{persona}\n\nText to speak:\n{text}"
         
         config = types.GenerateContentConfig(
             response_modalities=["AUDIO"],
             speech_config=types.SpeechConfig(
                 voice_config=types.VoiceConfig(
                     prebuilt_voice_config=types.PrebuiltVoiceConfig(
-                        voice_name="Puck",
+                        voice_name=voice_name,
                     )
                 )
             )
         )
         
-        print("Generating TTS with Gemini (Puck)...")
+        print(f"Generating TTS with Gemini ({voice_name})...")
         try:
             response = client.models.generate_content(
                 model='gemini-3.1-flash-tts-preview',

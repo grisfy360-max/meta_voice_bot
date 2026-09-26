@@ -20,46 +20,27 @@ ACCESS_TOKEN = os.getenv("META_ACCESS_TOKEN", "")
 
 from fastapi.responses import HTMLResponse
 
+import json
+from fastapi.responses import FileResponse
+
+def get_config():
+    with open("config.json", "r", encoding="utf-8") as f:
+        return json.load(f)
+
 @app.get("/", response_class=HTMLResponse)
 def dashboard():
-    html_content = """
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Meta Voice Assistant Dashboard</title>
-        <style>
-            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f6; margin: 0; padding: 20px; color: #333; }
-            .container { max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-            h1 { color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
-            .status-box { background: #e8f8f5; border-left: 5px solid #1abc9c; padding: 15px; margin: 20px 0; border-radius: 4px; }
-            .btn { background: #3498db; color: white; border: none; padding: 10px 20px; font-size: 16px; border-radius: 5px; cursor: pointer; transition: 0.3s; }
-            .btn:hover { background: #2980b9; }
-            .log-box { background: #2c3e50; color: #ecf0f1; padding: 15px; height: 200px; overflow-y: scroll; border-radius: 5px; font-family: monospace; }
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <h1>🎙️ Meta Voice Assistant Dashboard</h1>
-            <div class="status-box">
-                <strong>Status:</strong> 🟢 Server is running perfectly!<br>
-                <strong>Webhook URL:</strong> /webhook
-            </div>
-            
-            <h3>Live Logs</h3>
-            <div class="log-box" id="logs">
-                > System initialized...<br>
-                > Waiting for Meta Webhook events...<br>
-            </div>
-            
-            <br>
-            <button class="btn" onclick="alert('Manual testing will be enabled in Phase 4!')">▶ Test Bot Manually</button>
-        </div>
-    </body>
-    </html>
-    """
-    return HTMLResponse(content=html_content)
+    return FileResponse("admin.html")
+
+@app.get("/api/config")
+def read_config():
+    return get_config()
+
+@app.post("/api/config")
+async def update_config(request: Request):
+    data = await request.json()
+    with open("config.json", "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=4)
+    return {"status": "success"}
 
 # 1. Webhook Verification (Meta will call this during setup)
 @app.get("/webhook")
@@ -97,7 +78,7 @@ def process_voice_message(data):
             print(f"DEBUG Messenger payload: {message}")
             
             # Ignore messages sent by the bot itself (echos)
-            if message.get("is_echo"):
+            if message.get("is_echo") or not cfg.get("messenger_active", True):
                 print("Ignored echo message from bot.")
                 return
             
@@ -139,6 +120,9 @@ def process_voice_message(data):
         # 2. WHATSAPP WEBHOOK
         # ==========================================
         elif obj == "whatsapp_business_account":
+            if not cfg.get("whatsapp_active", True):
+                print("WhatsApp is disabled via dashboard.")
+                return Response(content="EVENT_RECEIVED", status_code=200)
             changes = entry.get("changes", [])[0]
             value = changes.get("value", {})
             
@@ -285,3 +269,6 @@ async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+
+
+
