@@ -106,7 +106,59 @@
                         </div>
                     </div>
 
-                    <!-- Right Column -->
+                    
+                        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 mt-6">
+                            <h3 class="text-lg font-bold text-gray-800 dark:text-gray-100 border-b border-gray-200 dark:border-gray-700 pb-3 mb-4">All-in-One AI Features</h3>
+                            
+                            <div class="space-y-4">
+                                <!-- Text to Text -->
+                                <div class="flex items-center justify-between p-3 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition">
+                                    <div>
+                                        <span class="block font-medium text-gray-800 dark:text-gray-200">Inbox Text Auto-Reply</span>
+                                        <span class="text-xs text-gray-500">AI replies to direct messages via text</span>
+                                    </div>
+                                    <label class="flex items-center cursor-pointer">
+                                        <div class="relative">
+                                            <input type="checkbox" x-model="config.feature_text" class="sr-only">
+                                            <div class="block w-10 h-6 rounded-full transition bg-gray-300 dark:bg-gray-600" :class="{'!bg-n8n': config.feature_text}"></div>
+                                            <div class="dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition transform" :class="{'translate-x-4': config.feature_text}"></div>
+                                        </div>
+                                    </label>
+                                </div>
+                                
+                                <!-- Comment Reply -->
+                                <div class="flex items-center justify-between p-3 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition">
+                                    <div>
+                                        <span class="block font-medium text-gray-800 dark:text-gray-200">Auto Comment Reply</span>
+                                        <span class="text-xs text-gray-500">AI automatically replies to page post comments</span>
+                                    </div>
+                                    <label class="flex items-center cursor-pointer">
+                                        <div class="relative">
+                                            <input type="checkbox" x-model="config.feature_comment" class="sr-only">
+                                            <div class="block w-10 h-6 rounded-full transition bg-gray-300 dark:bg-gray-600" :class="{'!bg-n8n': config.feature_comment}"></div>
+                                            <div class="dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition transform" :class="{'translate-x-4': config.feature_comment}"></div>
+                                        </div>
+                                    </label>
+                                </div>
+
+                                <!-- Voice Message -->
+                                <div class="flex items-center justify-between p-3 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition">
+                                    <div>
+                                        <span class="block font-medium text-gray-800 dark:text-gray-200">Voice Message Reply</span>
+                                        <span class="text-xs text-gray-500">AI converts text to audio and sends a voice note</span>
+                                    </div>
+                                    <label class="flex items-center cursor-pointer">
+                                        <div class="relative">
+                                            <input type="checkbox" x-model="config.feature_voice" class="sr-only">
+                                            <div class="block w-10 h-6 rounded-full transition bg-gray-300 dark:bg-gray-600" :class="{'!bg-n8n': config.feature_voice}"></div>
+                                            <div class="dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition transform" :class="{'translate-x-4': config.feature_voice}"></div>
+                                        </div>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+
+                      <!-- Right Column -->
                     <div class="space-y-6">
                         <!-- Voice Card -->
                         <div class="rounded-lg border n8n-shadow p-6 bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 transition-colors duration-200">
@@ -326,7 +378,10 @@
                     voice: 'Puck',
                     messenger_active: true,
                     whatsapp_active: true,
-                    verify_token: 'my_verify_token_123'
+                    verify_token: 'my_verify_token_123',
+                    feature_text: true,
+                    feature_comment: false,
+                    feature_voice: false
                 },
                 isPlaying: false,
                 
