@@ -391,7 +391,7 @@ def process_voice_message(data):
                     user_text = speech_to_text(input_audio_path, os.getenv("GEMINI_API_KEY"))
 
                     ai_reply = process_text_with_ai(user_text, user_id=sender_id)
-                send_typing_on_messenger(sender_id) # Refresh typing indicator
+                    send_typing_on_messenger(sender_id) # Refresh typing indicator
 
                     
 
