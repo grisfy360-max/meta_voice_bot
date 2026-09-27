@@ -265,6 +265,10 @@ def process_voice_message(data):
                 print("Ignored echo message from bot.")
 
                 return
+            
+            # Instantly send typing indicator
+            send_typing_on_messenger(sender_id)
+
 
             
 
