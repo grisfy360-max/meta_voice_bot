@@ -90,9 +90,12 @@ async def verify_webhook(request: Request):
     mode = request.query_params.get("hub.mode")
     token = request.query_params.get("hub.verify_token")
     challenge = request.query_params.get("hub.challenge")
+    
+    cfg = get_config()
+    current_verify_token = cfg.get("verify_token", VERIFY_TOKEN)
 
     if mode and token:
-        if mode == "subscribe" and token == VERIFY_TOKEN:
+        if mode == "subscribe" and token == current_verify_token:
             print("Webhook Verified successfully!")
             return Response(content=challenge, status_code=200)
     return Response(content="Verification failed", status_code=403)

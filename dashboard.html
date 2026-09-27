@@ -279,7 +279,8 @@
                     persona: '',
                     voice: 'Puck',
                     messenger_active: true,
-                    whatsapp_active: true
+                    whatsapp_active: true,
+                    verify_token: 'my_verify_token_123'
                 },
                 isPlaying: false,
                 
@@ -425,17 +426,20 @@
                         <div class="relative mt-6 flex-1 px-4 sm:px-6">
                             <!-- Webhook Settings -->
                             <div x-show="selectedNode === 'webhook'" class="space-y-4">
+                                <div class="space-y-4">
                                 <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 bg-gray-50 dark:bg-gray-900/50">
                                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Webhook URL</label>
                                     <div class="flex">
-                                        <input type="text" readonly value="https://meta-voice-bot.onrender.com/webhook" class="flex-1 p-2 text-sm border rounded-l-md bg-gray-100 dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400">
-                                        <button class="bg-gray-200 dark:bg-gray-700 px-3 border border-l-0 border-gray-300 dark:border-gray-600 rounded-r-md text-gray-600 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600">Copy</button>
+                                        <input type="text" readonly :value="window.location.origin + '/webhook'" class="flex-1 p-2 text-sm border rounded-l-md bg-gray-100 dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400">
+                                        <button @click="navigator.clipboard.writeText(window.location.origin + '/webhook'); saveMessage='URL Copied!'; setTimeout(()=>saveMessage='', 2000)" class="bg-gray-200 dark:bg-gray-700 px-3 border border-l-0 border-gray-300 dark:border-gray-600 rounded-r-md text-gray-600 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600">Copy</button>
                                     </div>
                                     
-                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 mt-4">Verify Token</label>
-                                    <input type="text" readonly value="my_verify_token_123" class="w-full p-2 text-sm border rounded-md bg-gray-100 dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400">
+                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 mt-4">Verify Token <span class="text-xs text-gray-400 font-normal">(Editable)</span></label>
+                                    <input type="text" x-model="config.verify_token" class="w-full p-2 text-sm border rounded-md bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-1 focus:ring-n8n focus:border-n8n">
                                     
-                                    <p class="text-xs text-gray-500 mt-3">This webhook URL is configured to receive incoming messages directly from Facebook and WhatsApp servers.</p>
+                                    <p class="text-xs text-gray-500 mt-3">This Webhook URL automatically adapts to your current domain (e.g. AWS, VPS, or Render).</p>
+                                </div>
+                                <button @click="saveConfig()" class="w-full bg-n8n hover:bg-n8ndark text-white font-semibold py-2 px-4 rounded transition">Save Settings</button>
                                 </div>
                             </div>
                             
