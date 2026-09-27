@@ -288,6 +288,8 @@ def process_voice_message(data):
 
                 
 
+                send_text_reply_messenger(sender_id, "আপনার ভয়েস মেসেজটি শুনছি...")
+                send_typing_on_messenger(sender_id)
                 # Download Audio
 
                 input_audio_path = f"incoming_{sender_id}.mp4"
@@ -307,7 +309,12 @@ def process_voice_message(data):
                 user_text = speech_to_text(input_audio_path, os.getenv("GEMINI_API_KEY"))
 
                 ai_reply = process_text_with_ai(user_text, user_id=sender_id)
-
+                
+                # Send text first for instant UX
+                send_text_reply_messenger(sender_id, ai_reply)
+                # Resend typing indicator for TTS phase
+                send_typing_on_messenger(sender_id)
+                
                 output_audio_path = f"reply_{sender_id}.wav"
 
                 text_to_speech(ai_reply, os.getenv("GEMINI_API_KEY"), output_audio_path)
@@ -330,6 +337,8 @@ def process_voice_message(data):
 
                 print(f"Received text from Messenger user {sender_id}.")
 
+                send_text_reply_messenger(sender_id, "একটু সময় দিন, চেক করছি...")
+                send_typing_on_messenger(sender_id)
                 ai_reply = process_text_with_ai(text_body, user_id=sender_id)
 
                 send_text_reply_messenger(sender_id, ai_reply)
