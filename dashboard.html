@@ -393,32 +393,10 @@
                     this.passwordInput = '';
                 },
                 async playPreview() {
-                      this.isPlaying = true;
-                      try {
-                          // Instantly play the pre-generated static audio for the selected voice
-                          const audio = this..audioPlayer;
-                          audio.src = /static/audio/ + this.config.voice + .wav;
-                          audio.onended = () => { this.isPlaying = false; };
-                          await audio.play();
-                      } catch (e) {
-                          console.error(e);
-                          alert('Failed to play preview.');
-                          this.isPlaying = false;
-                      }
-                  },
-                            body: JSON.stringify({
-                                voice: this.config.voice,
-                                persona: this.config.persona
-                            })
-                        });
-                        
-                        if (!response.ok) throw new Error('Preview failed');
-                        
-                        const blob = await response.blob();
-                        const url = URL.createObjectURL(blob);
-                        
+                    this.isPlaying = true;
+                    try {
                         const audio = this.$refs.audioPlayer;
-                        audio.src = url;
+                        audio.src = `/static/audio/${this.config.voice}.wav`;
                         await audio.play();
                         audio.onended = () => { this.isPlaying = false; };
                         audio.onerror = () => { this.isPlaying = false; alert("Failed to play voice preview."); };
