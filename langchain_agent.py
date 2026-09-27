@@ -13,7 +13,7 @@ load_dotenv()
 
 # ১. Initialize LLM (ব্রেইন)
 llm = ChatGoogleGenerativeAI(
-    model="gemini-3.5-flash", 
+    model="gemini-1.5-flash", 
     google_api_key=os.getenv("GEMINI_API_KEY"),
     temperature=0.7
 )
