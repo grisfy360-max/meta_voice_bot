@@ -161,6 +161,45 @@
                 </div>
             </div>
 
+            <!-- Docs Tab -->
+            <div x-cloak x-show="activeTab === 'docs'" class="space-y-6 max-w-4xl">
+                <div class="mb-8">
+                    <h2 class="text-2xl font-bold text-gray-800 dark:text-gray-100">Platform Deployment Guide</h2>
+                    <p class="text-gray-500 dark:text-gray-400 mt-1">Step-by-step instructions for hosting and integrating this bot.</p>
+                </div>
+                
+                <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 space-y-6">
+                    <h3 class="text-lg font-bold border-b border-gray-200 dark:border-gray-700 pb-2 dark:text-gray-200">1. Meta Webhook Setup (Facebook/WhatsApp)</h3>
+                    <ul class="list-decimal pl-5 space-y-2 text-gray-700 dark:text-gray-300">
+                        <li>Go to <a href="https://developers.facebook.com/" target="_blank" class="text-blue-500 hover:underline">Meta for Developers</a> and select your App.</li>
+                        <li>Navigate to <b>Webhooks</b> > Edit Subscription.</li>
+                        <li><b>Callback URL:</b> Paste your Webhook URL (copy it from the Visual Map's Webhook Node).</li>
+                        <li><b>Verify Token:</b> Paste your exact Verify Token.</li>
+                        <li>Click <b>Verify and Save</b>.</li>
+                        <li>Make sure to subscribe to the <code>messages</code> and <code>messaging_postbacks</code> fields!</li>
+                    </ul>
+
+                    <h3 class="text-lg font-bold border-b border-gray-200 dark:border-gray-700 pb-2 mt-8 dark:text-gray-200">2. Hosting on Render.com (Beginner)</h3>
+                    <ul class="list-decimal pl-5 space-y-2 text-gray-700 dark:text-gray-300">
+                        <li>Go to Render Dashboard > New Web Service.</li>
+                        <li>Connect your GitHub repository.</li>
+                        <li>Build Command: <code>pip install -r requirements.txt</code></li>
+                        <li>Start Command: <code>uvicorn main:app --host 0.0.0.0 --port 10000</code></li>
+                        <li>Under <b>Environment Variables</b>, add <code>META_API_TOKEN</code> (your page access token).</li>
+                    </ul>
+
+                    <h3 class="text-lg font-bold border-b border-gray-200 dark:border-gray-700 pb-2 mt-8 dark:text-gray-200">3. Hosting on AWS / VPS (Advanced)</h3>
+                    <ul class="list-decimal pl-5 space-y-2 text-gray-700 dark:text-gray-300">
+                        <li>Clone the repository to your Ubuntu server.</li>
+                        <li>Install Python and PM2: <code>sudo apt install python3-pip npm && sudo npm install -g pm2</code></li>
+                        <li>Install dependencies: <code>pip install -r requirements.txt</code></li>
+                        <li>Start the server in the background: <code>pm2 start "uvicorn main:app --host 0.0.0.0 --port 8000" --name metabot</code></li>
+                        <li>Use Nginx as a reverse proxy to forward traffic to port 8000 and attach an SSL certificate using Certbot.</li>
+                        <li>Store your variables securely using a <code>.env</code> file or a Secrets management tool (SOPS).</li>
+                    </ul>
+                </div>
+            </div>
+
             <!-- Workflows Tab -->
             <div x-cloak x-show="activeTab === 'workflows'" class="space-y-6">
                 <div class="mb-8">
