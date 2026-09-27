@@ -393,11 +393,19 @@
                     this.passwordInput = '';
                 },
                 async playPreview() {
-                    this.isPlaying = true;
-                    try {
-                        const response = await fetch('/api/preview_voice', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
+                      this.isPlaying = true;
+                      try {
+                          // Instantly play the pre-generated static audio for the selected voice
+                          const audio = this..audioPlayer;
+                          audio.src = /static/audio/ + this.config.voice + .wav;
+                          audio.onended = () => { this.isPlaying = false; };
+                          await audio.play();
+                      } catch (e) {
+                          console.error(e);
+                          alert('Failed to play preview.');
+                          this.isPlaying = false;
+                      }
+                  },
                             body: JSON.stringify({
                                 voice: this.config.voice,
                                 persona: this.config.persona
