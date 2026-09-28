@@ -13,7 +13,7 @@ load_dotenv()
 
 # ১. Initialize LLM (ব্রেইন)
 llm = ChatGoogleGenerativeAI(
-    model="gemini-flash-latest", 
+    model="gemini-2.5-flash", 
     google_api_key=os.getenv("GEMINI_API_KEY"),
     temperature=0.7
 )
@@ -115,27 +115,20 @@ conversational_image_chain = RunnableWithMessageHistory(
 
 def process_image_with_ai(image_url: str, user_id: str = "default_user"):
     try:
-        import requests, base64
-        # Facebook CDN often blocks python requests without User-Agent
+        import requests, base64, os
+        # Download securely using the Page Access Token so Facebook doesn't return a placeholder/stock image
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8"
+            "Authorization": f"Bearer {os.getenv('PAGE_ACCESS_TOKEN', '')}",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
         }
         img_response = requests.get(image_url, headers=headers)
         
-        # Check if it's actually an image
         content_type = img_response.headers.get("Content-Type", "")
         if "image" not in content_type:
-            print(f"Warning: URL did not return an image. Content-Type: {content_type}")
-            print(f"Response snippet: {img_response.text[:200]}")
-            return "দুঃখিত, ছবিটি আমার কাছে ঠিকমতো পৌঁছায়নি। ফেসবুকের সিকিউরিটির কারণে ছবিটি ব্লক হয়েছে।"
+            return "দুঃখিত, ছবিটি আমার কাছে ঠিকমতো পৌঁছায়নি। ফেসবুক সিকিউরিটি ব্লক করেছে।"
             
         img_b64 = base64.b64encode(img_response.content).decode("utf-8")
         mime_type = content_type if content_type else "image/jpeg"
-        
-        # Save locally for debugging
-        with open("debug_last_image.jpg", "wb") as f:
-            f.write(img_response.content)
         
         image_message = [
             {"type": "text", "text": "Can you describe this image or answer what it is? Always reply in pure Bengali."},
