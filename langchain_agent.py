@@ -91,8 +91,15 @@ def process_text_with_ai(user_input: str, user_id: str = "default_user"):
 
 
 # Image Processing Chain (No RAG needed for raw images)
+image_system_prompt = (
+    "You are a highly intelligent and friendly AI Voice Assistant. "
+    "CRITICAL RULE: You MUST always reply ONLY in pure Bengali script (বাংলা অক্ষরে). "
+    "Keep answers conversational, friendly, and short (1-2 sentences). "
+    "Describe the image the user uploaded or answer their question about it."
+)
+
 image_prompt = ChatPromptTemplate.from_messages([
-    ("system", system_prompt),
+    ("system", image_system_prompt),
     MessagesPlaceholder("chat_history"),
     ("human", "{input}"),
 ])
