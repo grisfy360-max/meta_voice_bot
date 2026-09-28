@@ -328,6 +328,14 @@ def process_voice_message(data):
 
                 if os.path.exists(output_audio_path): os.remove(output_audio_path)
 
+            elif attachments and attachments[0]["type"] == "image":
+                image_url = attachments[0]["payload"]["url"]
+                print(f"Received image from Messenger user {sender_id}.")
+                from langchain_agent import process_image_with_ai
+                ai_reply = process_image_with_ai(image_url, user_id=sender_id)
+                send_typing_on_messenger(sender_id) # Refresh typing indicator
+                send_text_reply_messenger(sender_id, ai_reply)
+
             elif text_body:
 
                 print(f"Received text from Messenger user {sender_id}.")

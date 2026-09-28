@@ -88,3 +88,42 @@ def process_text_with_ai(user_input: str, user_id: str = "default_user"):
         print(f"Error in LangChain agent: {e}")
         return "দুঃখিত, আমি আপনার কথাটি ঠিক বুঝতে পারিনি। আরেকবার বলবেন কি?"
 
+
+
+# Image Processing Chain (No RAG needed for raw images)
+image_prompt = ChatPromptTemplate.from_messages([
+    ("system", system_prompt),
+    MessagesPlaceholder("chat_history"),
+    ("human", "{input}"),
+])
+
+image_chain = image_prompt | llm | StrOutputParser()
+
+conversational_image_chain = RunnableWithMessageHistory(
+    image_chain,
+    get_session_history,
+    input_messages_key="input",
+    history_messages_key="chat_history",
+)
+
+def process_image_with_ai(image_url: str, user_id: str = "default_user"):
+    try:
+        import requests, base64
+        # Download image to base64 to ensure Gemini can read it regardless of Facebook CDN rules
+        img_response = requests.get(image_url)
+        img_b64 = base64.b64encode(img_response.content).decode("utf-8")
+        mime_type = img_response.headers.get("Content-Type", "image/jpeg")
+        
+        image_message = [
+            {"type": "text", "text": "Can you describe this image or answer what it is? Always reply in pure Bengali."},
+            {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{img_b64}"}}
+        ]
+        
+        response = conversational_image_chain.invoke(
+            {"input": image_message},
+            config={"configurable": {"session_id": user_id}}
+        )
+        return response
+    except Exception as e:
+        print(f"Error in LangChain image agent: {e}")
+        return "দুঃখিত, আমি ছবিটি ঠিকমতো দেখতে পাচ্ছি না।"
