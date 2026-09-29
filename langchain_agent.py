@@ -141,7 +141,7 @@ image_system_prompt = (
 image_prompt = ChatPromptTemplate.from_messages([
     ("system", image_system_prompt),
     MessagesPlaceholder("chat_history"),
-    ("human", "{input}"),
+    MessagesPlaceholder("input"),
 ])
 
 image_chain = image_prompt | llm | RunnableLambda(custom_output_parser)
@@ -178,13 +178,14 @@ def process_image_with_ai(image_url: str, user_id: str = "default_user", custom_
         # Use custom prompt if provided, else fallback to default
         prompt_text = custom_prompt if custom_prompt else "Can you describe this image or answer what it is? Always reply in pure Bengali."
         
+        from langchain_core.messages import HumanMessage
         image_message = [
             {"type": "text", "text": prompt_text},
             {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{img_b64}"}}
         ]
         
         response = conversational_image_chain.invoke(
-            {"input": image_message},
+            {"input": [HumanMessage(content=image_message)]},
             config={"configurable": {"session_id": user_id}}
         )
         return response
