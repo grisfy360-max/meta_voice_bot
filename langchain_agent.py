@@ -78,11 +78,21 @@ prompt = ChatPromptTemplate.from_messages([
 def format_docs(docs):
     return "\n\n".join(doc.page_content for doc in docs)
 
+from langchain_core.runnables import RunnableLambda
+
+def custom_output_parser(ai_message):
+    content = ai_message.content
+    if isinstance(content, list):
+        # Extract the actual text from the list of dicts (Gemini 3.5 format bug)
+        texts = [item.get("text", "") for item in content if isinstance(item, dict) and "text" in item]
+        return " ".join(texts)
+    return str(content)
+
 rag_chain = (
     {"context": itemgetter("input") | retriever | format_docs, "input": itemgetter("input"), "chat_history": itemgetter("chat_history")}
     | prompt
     | llm
-    | StrOutputParser()
+    | RunnableLambda(custom_output_parser)
 )
 
 # ৬. Memory (চ্যাট হিস্ট্রি মনে রাখার জন্য)
@@ -132,7 +142,7 @@ image_prompt = ChatPromptTemplate.from_messages([
     ("human", "{input}"),
 ])
 
-image_chain = image_prompt | llm | StrOutputParser()
+image_chain = image_prompt | llm | RunnableLambda(custom_output_parser)
 
 conversational_image_chain = RunnableWithMessageHistory(
     image_chain,
