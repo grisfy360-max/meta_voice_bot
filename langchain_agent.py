@@ -125,7 +125,7 @@ If NO (can be answered normally or from chat history), reply ONLY with: NO
 
 User question: {input}
 """)
-search_decision_chain = search_decision_prompt | llm | StrOutputParser()
+search_decision_chain = search_decision_prompt | llm | RunnableLambda(custom_output_parser)
 
 def process_text_with_ai(user_input: str, user_id: str = "default_user"):
     """
