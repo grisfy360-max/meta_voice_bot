@@ -99,8 +99,14 @@ async def startup_event():
 @app.get("/", response_class=HTMLResponse)
 
 def dashboard():
-
     return FileResponse("dashboard.html", headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
+
+# Global debug logs
+debug_logs = []
+
+@app.get("/debug")
+def get_debug_logs():
+    return {"logs": debug_logs[-10:]}
 
 
 
@@ -641,15 +647,13 @@ def send_audio_reply_whatsapp(phone_number_id, recipient_id, audio_path):
 @app.post("/webhook")
 
 async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
-
     try:
-
         data = await request.json()
-
+        global debug_logs
+        debug_logs.append({"webhook": data})
+        if len(debug_logs) > 50: debug_logs.pop(0)
         
-
         # We send the processing to a background task so Meta gets a fast 200 OK
-
         background_tasks.add_task(process_voice_message, data)
 
         

@@ -163,9 +163,12 @@ def process_image_with_ai(image_url: str, user_id: str = "default_user", custom_
         params = {
             "access_token": os.getenv("PAGE_ACCESS_TOKEN", "")
         }
+        print(f"DEBUG: Downloading image URL: {image_url}")
         img_response = requests.get(image_url, headers=headers, params=params)
         
         content_type = img_response.headers.get("Content-Type", "")
+        print(f"DEBUG: Downloaded Content-Type: {content_type}, Status: {img_response.status_code}")
+        
         if "image" not in content_type:
             return "দুঃখিত, ছবিটি আমার কাছে ঠিকমতো পৌঁছায়নি। ফেসবুক সিকিউরিটি ব্লক করেছে।"
             
