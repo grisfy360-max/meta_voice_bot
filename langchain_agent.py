@@ -11,12 +11,40 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# ১. Initialize LLM (ব্রেইন)
-llm = ChatGoogleGenerativeAI(
+from langchain_core.callbacks import BaseCallbackHandler
+
+# কাস্টম লগার তৈরি করা, যা ফেইল করলে প্রিন্ট করবে
+class FallbackLogger(BaseCallbackHandler):
+    def on_llm_error(self, error: BaseException, **kwargs):
+        print(f"\n[⚠️ LLM Routing Alert] Error encountered: {error}")
+        print("[🔄 Action] Shifting to the next smaller fallback model...\n")
+
+fallback_logger = FallbackLogger()
+
+# ১. Initialize LLMs (প্রাইমারি এবং ফলব্যাক)
+primary_llm = ChatGoogleGenerativeAI(
     model="gemini-2.5-flash", 
     google_api_key=os.getenv("GEMINI_API_KEY"),
-    temperature=0.7
+    temperature=0.7,
+    callbacks=[fallback_logger]
 )
+
+fallback_llm_1 = ChatGoogleGenerativeAI(
+    model="gemini-3.5-flash-lite", 
+    google_api_key=os.getenv("GEMINI_API_KEY"),
+    temperature=0.7,
+    callbacks=[fallback_logger]
+)
+
+fallback_llm_2 = ChatGoogleGenerativeAI(
+    model="gemini-2.5-flash-lite", 
+    google_api_key=os.getenv("GEMINI_API_KEY"),
+    temperature=0.7,
+    callbacks=[fallback_logger]
+)
+
+# LLM Routing Setup (প্রাইমারি ফেইল করলে ছোট মডেলে ফলব্যাক করবে)
+llm = primary_llm.with_fallbacks([fallback_llm_1, fallback_llm_2])
 
 # ২. Initialize Embeddings (টেক্সটকে ভেক্টরে রূপান্তর করার জন্য)
 embeddings = GoogleGenerativeAIEmbeddings(
