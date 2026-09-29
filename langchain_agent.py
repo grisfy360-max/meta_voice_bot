@@ -160,7 +160,10 @@ def process_image_with_ai(image_url: str, user_id: str = "default_user", custom_
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
         }
-        img_response = requests.get(image_url, headers=headers)
+        params = {
+            "access_token": os.getenv("PAGE_ACCESS_TOKEN", "")
+        }
+        img_response = requests.get(image_url, headers=headers, params=params)
         
         content_type = img_response.headers.get("Content-Type", "")
         if "image" not in content_type:
