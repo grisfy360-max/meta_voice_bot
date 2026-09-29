@@ -12,3 +12,5 @@ gTTS
 google-genai
 aiofiles
 httpx
+
+duckduckgo-search

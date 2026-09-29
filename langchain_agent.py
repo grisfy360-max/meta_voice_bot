@@ -4,6 +4,7 @@ from langchain_community.vectorstores import Chroma
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from operator import itemgetter
+from duckduckgo_search import DDGS
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables.history import RunnableWithMessageHistory
 from langchain_community.chat_message_histories import ChatMessageHistory
@@ -116,14 +117,45 @@ conversational_rag_chain = RunnableWithMessageHistory(
     history_messages_key="chat_history",
 )
 
+# Search Decision Chain
+search_decision_prompt = ChatPromptTemplate.from_template("""
+You are a smart router. Decide if you need to search the live internet to answer the user's question (e.g., current news, latest prices, weather, facts not in your knowledge base).
+If YES, reply ONLY with: SEARCH: <your search query>
+If NO (can be answered normally or from chat history), reply ONLY with: NO
+
+User question: {input}
+""")
+search_decision_chain = search_decision_prompt | llm | StrOutputParser()
+
 def process_text_with_ai(user_input: str, user_id: str = "default_user"):
     """
-    এই ফাংশনটি ইউজারের প্রশ্ন নেবে, ডেটাবেস খুঁজবে, আগের কথা মনে করবে 
-    এবং একটি সুন্দর বাংলা উত্তর (Text) তৈরি করে ফেরত দেবে।
+    এই ফাংশনটি ইউজারের প্রশ্ন নেবে, ডেটাবেস খুঁজবে, ইন্টারনেট সার্চ করবে (যদি প্রয়োজন হয়), 
+    আগের কথা মনে করবে এবং একটি সুন্দর বাংলা উত্তর (Text) তৈরি করে ফেরত দেবে।
     """
     try:
+        # Step 1: Decide if we need internet search
+        decision = search_decision_chain.invoke({"input": user_input})
+        internet_context = ""
+        
+        if decision.strip().startswith("SEARCH:"):
+            query = decision.replace("SEARCH:", "").strip()
+            print(f"Searching internet for: {query}")
+            try:
+                results = DDGS().text(query, max_results=3)
+                if results:
+                    snippets = [f"Title: {r['title']}\nSnippet: {r['body']}" for r in results]
+                    internet_context = "INTERNET SEARCH RESULTS:\n" + "\n\n".join(snippets) + "\n\n"
+            except Exception as e:
+                print(f"DDG Search error: {e}")
+        
+        # Step 2: Combine inputs
+        final_input = user_input
+        if internet_context:
+            final_input = f"{internet_context}\nUser Question: {user_input}"
+            
+        # Step 3: Run RAG chain
         response = conversational_rag_chain.invoke(
-            {"input": user_input},
+            {"input": final_input},
             config={"configurable": {"session_id": user_id}}
         )
         return response
