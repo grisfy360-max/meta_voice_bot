@@ -151,12 +151,11 @@ conversational_image_chain = RunnableWithMessageHistory(
     history_messages_key="chat_history",
 )
 
-def process_image_with_ai(image_url: str, user_id: str = "default_user"):
+def process_image_with_ai(image_url: str, user_id: str = "default_user", custom_prompt: str = None):
     try:
         import requests, base64, os
-        # Download securely using the Page Access Token so Facebook doesn't return a placeholder/stock image
+        # Download securely. Facebook scontent URLs are pre-signed, so Authorization header can sometimes cause CDN blocks (returning a 1x1 or placeholder image).
         headers = {
-            "Authorization": f"Bearer {os.getenv('PAGE_ACCESS_TOKEN', '')}",
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
         }
         img_response = requests.get(image_url, headers=headers)
@@ -168,8 +167,11 @@ def process_image_with_ai(image_url: str, user_id: str = "default_user"):
         img_b64 = base64.b64encode(img_response.content).decode("utf-8")
         mime_type = content_type if content_type else "image/jpeg"
         
+        # Use custom prompt if provided, else fallback to default
+        prompt_text = custom_prompt if custom_prompt else "Can you describe this image or answer what it is? Always reply in pure Bengali."
+        
         image_message = [
-            {"type": "text", "text": "Can you describe this image or answer what it is? Always reply in pure Bengali."},
+            {"type": "text", "text": prompt_text},
             {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{img_b64}"}}
         ]
         
