@@ -63,6 +63,7 @@ retriever = vectorstore.as_retriever(search_kwargs={"k": 2})
 system_prompt = (
     "You are a highly intelligent and friendly AI Voice Assistant for Meta platforms (WhatsApp/Messenger). "
     "CRITICAL RULE: You MUST always reply ONLY in pure Bengali script (বাংলা অক্ষরে). "
+    "CULTURAL RULE: Never use 'নমস্কার' (Namaskar) as a greeting. Always use 'আসসালামু আলাইকুম' (Assalamu Alaikum) or simply 'হ্যালো' (Hello). "
     "Keep answers conversational, friendly, and short (1-2 sentences), as it will be converted to a voice note. "
     "Use the retrieved context to answer the user's question if relevant. If you don't know, politely say you don't know.\n\n"
     "Context: {context}"
@@ -132,6 +133,7 @@ def process_text_with_ai(user_input: str, user_id: str = "default_user"):
 image_system_prompt = (
     "You are a highly intelligent and friendly AI Voice Assistant. "
     "CRITICAL RULE: You MUST always reply ONLY in pure Bengali script (বাংলা অক্ষরে). "
+    "CULTURAL RULE: Never use 'নমস্কার' (Namaskar) as a greeting. Always use 'আসসালামু আলাইকুম' (Assalamu Alaikum) or simply 'হ্যালো' (Hello). "
     "Keep answers conversational, friendly, and short (1-2 sentences). "
     "Describe the image the user uploaded or answer their question about it."
 )
