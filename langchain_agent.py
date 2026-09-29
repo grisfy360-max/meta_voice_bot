@@ -23,7 +23,7 @@ fallback_logger = FallbackLogger()
 
 # ১. Initialize LLMs (প্রাইমারি এবং ফলব্যাক)
 primary_llm = ChatGoogleGenerativeAI(
-    model="gemini-2.5-flash", 
+    model="gemini-3.5-flash-lite", 
     google_api_key=os.getenv("GEMINI_API_KEY"),
     temperature=0.7,
     max_retries=0,
@@ -31,7 +31,7 @@ primary_llm = ChatGoogleGenerativeAI(
 )
 
 fallback_llm_1 = ChatGoogleGenerativeAI(
-    model="gemini-3.5-flash-lite", 
+    model="gemini-2.5-flash", 
     google_api_key=os.getenv("GEMINI_API_KEY"),
     temperature=0.7,
     max_retries=0,
