@@ -36,7 +36,7 @@ app.add_middleware(
 
 
 
-VERIFY_TOKEN = os.getenv("META_VERIFY_TOKEN", "my_secure_verify_token_123")
+VERIFY_TOKEN = get_config().get("verify_token", "my_verify_token_123")
 
 ACCESS_TOKEN = os.getenv("META_ACCESS_TOKEN", "")
 
@@ -140,7 +140,7 @@ def preview_voice_post(req: PreviewRequest):
 
     
 
-    api_key = os.getenv("GEMINI_API_KEY")
+    api_key = get_config().get("gemini_api_key", "")
 
     if not api_key:
 
@@ -310,7 +310,7 @@ def process_voice_message(data):
 
                 # Speech to Text, AI, Text to Speech
 
-                user_text = speech_to_text(input_audio_path, os.getenv("GEMINI_API_KEY"))
+                user_text = speech_to_text(input_audio_path, get_config().get("gemini_api_key", ""))
 
                 ai_reply = process_text_with_ai(user_text, user_id=sender_id)
                 send_typing_on_messenger(sender_id) # Refresh typing indicator
@@ -318,7 +318,7 @@ def process_voice_message(data):
                                 
                 output_audio_path = f"reply_{sender_id}.wav"
 
-                text_to_speech(ai_reply, os.getenv("GEMINI_API_KEY"), output_audio_path)
+                text_to_speech(ai_reply, get_config().get("gemini_api_key", ""), output_audio_path)
 
                 
 
@@ -396,13 +396,13 @@ def process_voice_message(data):
 
                     input_audio_path = f"incoming_{media_id}.ogg"
 
-                    whatsapp_token = os.getenv("WHATSAPP_ACCESS_TOKEN", "")
+                    whatsapp_token = get_config().get("whatsapp_token", "")
 
                     download_audio_from_meta(media_id, whatsapp_token, input_audio_path)
 
                     
 
-                    user_text = speech_to_text(input_audio_path, os.getenv("GEMINI_API_KEY"))
+                    user_text = speech_to_text(input_audio_path, get_config().get("gemini_api_key", ""))
 
                     ai_reply = process_text_with_ai(user_text, user_id=sender_id)
                     send_typing_on_messenger(sender_id) # Refresh typing indicator
@@ -411,7 +411,7 @@ def process_voice_message(data):
 
                     output_audio_path = f"reply_{media_id}.wav"
 
-                    text_to_speech(ai_reply, os.getenv("GEMINI_API_KEY"), output_audio_path)
+                    text_to_speech(ai_reply, get_config().get("gemini_api_key", ""), output_audio_path)
 
                     
 
@@ -451,7 +451,7 @@ def process_voice_message(data):
 def send_typing_on_messenger(recipient_id):
     import requests
     import os
-    messenger_token = os.getenv("MESSENGER_ACCESS_TOKEN", "")
+    messenger_token = get_config().get("messenger_token", "")
     if not messenger_token: return
     url = f"https://graph.facebook.com/v19.0/me/messages?access_token={messenger_token}"
     payload = {
@@ -466,7 +466,7 @@ def send_text_reply_messenger(recipient_id, text):
 
     import os
 
-    messenger_token = os.getenv("MESSENGER_ACCESS_TOKEN", "")
+    messenger_token = get_config().get("messenger_token", "")
 
     url = f"https://graph.facebook.com/v19.0/me/messages?access_token={messenger_token}"
 
@@ -498,7 +498,7 @@ def send_text_reply_whatsapp(phone_number_id, recipient_id, text):
 
     import os
 
-    whatsapp_token = os.getenv("WHATSAPP_ACCESS_TOKEN", "")
+    whatsapp_token = get_config().get("whatsapp_token", "")
 
     send_url = f"https://graph.facebook.com/v18.0/{phone_number_id}/messages"
 
@@ -538,7 +538,7 @@ def send_audio_reply_messenger(recipient_id, audio_path):
 
     import requests
 
-    messenger_token = os.getenv("MESSENGER_ACCESS_TOKEN", "")
+    messenger_token = get_config().get("messenger_token", "")
 
     url = f"https://graph.facebook.com/v19.0/me/messages?access_token={messenger_token}"
 
@@ -574,7 +574,7 @@ def send_audio_reply_whatsapp(phone_number_id, recipient_id, audio_path):
 
     import requests
 
-    whatsapp_token = os.getenv("WHATSAPP_ACCESS_TOKEN", "")
+    whatsapp_token = get_config().get("whatsapp_token", "")
 
     
 

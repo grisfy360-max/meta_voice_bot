@@ -336,6 +336,9 @@
                 loginError: false,
                 saveMessage: '',
                 config: {
+                    gemini_api_key: '',
+                    messenger_token: '',
+                    whatsapp_token: '',
                     persona: '',
                     voice: 'Puck',
                     messenger_active: true,
@@ -495,8 +498,12 @@
                             <!-- AI Node Settings -->
                             <div x-show="selectedNode === 'ai'" class="space-y-6">
                                 <div>
-                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">System Prompt</label>
-                                    <textarea x-model="config.persona" rows="8" class="w-full p-3 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-n8n focus:border-n8n font-mono border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200"></textarea>
+                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Gemini API Key <span class="text-xs text-gray-400 font-normal">(Required)</span></label>
+                                    <input type="password" x-model="config.gemini_api_key" placeholder="AIzaSy..." class="w-full p-2 text-sm border rounded-md bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-1 focus:ring-n8n focus:border-n8n">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 mt-4">System Prompt</label>
+                                    <textarea x-model="config.persona" rows="6" class="w-full p-3 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-n8n focus:border-n8n font-mono border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200"></textarea>
                                 </div>
                                 <div>
                                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Voice Character</label>
@@ -533,6 +540,10 @@
                                             </div>
                                         </label>
                                     </div>
+                                    <div x-show="config.messenger_active" class="py-3 border-b border-gray-200 dark:border-gray-700">
+                                        <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Page Access Token (EAAD...)</label>
+                                        <input type="password" x-model="config.messenger_token" class="w-full p-2 text-sm border rounded-md bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200">
+                                    </div>
                                     <div class="flex items-center justify-between pt-4">
                                         <div>
                                             <span class="block font-medium text-gray-800 dark:text-gray-200">WhatsApp Integration</span>
@@ -545,6 +556,10 @@
                                                 <div class="dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition transform" :class="{'translate-x-4': config.whatsapp_active}"></div>
                                             </div>
                                         </label>
+                                    </div>
+                                    <div x-show="config.whatsapp_active" class="pt-3">
+                                        <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">WhatsApp Token</label>
+                                        <input type="password" x-model="config.whatsapp_token" class="w-full p-2 text-sm border rounded-md bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200">
                                     </div>
                                 </div>
                                 <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 bg-gray-50 dark:bg-gray-900/50 mt-4">

@@ -1,3 +1,10 @@
+import json
+def get_config():
+    try:
+        with open('config.json', 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except: return {}
+
 import os
 from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 from langchain_community.vectorstores import Chroma
@@ -25,7 +32,7 @@ fallback_logger = FallbackLogger()
 # ১. Initialize LLMs (প্রাইমারি এবং ফলব্যাক)
 primary_llm = ChatGoogleGenerativeAI(
     model="gemini-3.5-flash-lite", 
-    google_api_key=os.getenv("GEMINI_API_KEY"),
+    google_api_key=get_config().get("gemini_api_key", os.getenv("GEMINI_API_KEY")),
     temperature=0.7,
     max_retries=0,
     callbacks=[fallback_logger]
@@ -33,7 +40,7 @@ primary_llm = ChatGoogleGenerativeAI(
 
 fallback_llm_1 = ChatGoogleGenerativeAI(
     model="gemini-2.5-flash", 
-    google_api_key=os.getenv("GEMINI_API_KEY"),
+    google_api_key=get_config().get("gemini_api_key", os.getenv("GEMINI_API_KEY")),
     temperature=0.7,
     max_retries=0,
     callbacks=[fallback_logger]
@@ -41,7 +48,7 @@ fallback_llm_1 = ChatGoogleGenerativeAI(
 
 fallback_llm_2 = ChatGoogleGenerativeAI(
     model="gemini-2.5-flash-lite", 
-    google_api_key=os.getenv("GEMINI_API_KEY"),
+    google_api_key=get_config().get("gemini_api_key", os.getenv("GEMINI_API_KEY")),
     temperature=0.7,
     max_retries=0,
     callbacks=[fallback_logger]
@@ -53,7 +60,7 @@ llm = primary_llm.with_fallbacks([fallback_llm_1, fallback_llm_2])
 # ২. Initialize Embeddings (টেক্সটকে ভেক্টরে রূপান্তর করার জন্য)
 embeddings = GoogleGenerativeAIEmbeddings(
     model="models/gemini-embedding-2",
-    google_api_key=os.getenv("GEMINI_API_KEY")
+    google_api_key=get_config().get("gemini_api_key", os.getenv("GEMINI_API_KEY"))
 )
 
 # ৩. Initialize ChromaDB (Vector Database)
@@ -197,7 +204,7 @@ def process_image_with_ai(image_url: str, user_id: str = "default_user", custom_
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
         }
         params = {
-            "access_token": os.getenv("PAGE_ACCESS_TOKEN", "")
+            "access_token": get_config().get("messenger_token", os.getenv("PAGE_ACCESS_TOKEN", ""))
         }
         print(f"DEBUG: Downloading image URL: {image_url}")
         img_response = requests.get(image_url, headers=headers, params=params)
