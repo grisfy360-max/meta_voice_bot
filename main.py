@@ -169,7 +169,23 @@ async def update_config(request: Request):
 
     return {"status": "success"}
 
+@app.get("/api/knowledge")
+def get_knowledge_api():
+    try:
+        from knowledge_base import DEFAULT_KNOWLEDGE_DOCS
+        items = [{"content": d.page_content, "metadata": d.metadata} for d in DEFAULT_KNOWLEDGE_DOCS]
+        return {"status": "success", "items": items}
+    except Exception as e:
+        return {"status": "error", "message": str(e), "items": []}
 
+@app.post("/api/knowledge/sync")
+def sync_knowledge_api():
+    try:
+        from knowledge_base import seed_knowledge_base
+        seed_knowledge_base()
+        return {"status": "success", "message": "Knowledge base synced to ChromaDB successfully!"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 # 1. Webhook Verification (Meta will call this during setup)
 
