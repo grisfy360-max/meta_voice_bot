@@ -9,6 +9,12 @@ Verifies:
 6. Instant real-time barge-in interruption (< 250ms cancellation)
 7. Audio stream byte integrity (MPEG / ID3 header check)
 8. End-to-end latency SLA benchmarking
+9. Mobile Safari simulation (fragmented audio/mp4 streaming turn)
+10. Mobile Chrome simulation (audio/webm Opus streaming turn)
+11. Base64 JSON audio streaming protocol negotiation
+12. Anti-buffering resilience: zero-byte audio turn recovery
+13. Anti-buffering resilience: corrupted/non-audio payload recovery
+14. Mobile WebSocket keepalive (Ping / Pong heartbeat)
 """
 
 import asyncio
@@ -20,6 +26,7 @@ import time
 import threading
 import httpx
 import websockets
+import subprocess
 
 # Ensure UTF-8 unbuffered stdout/stderr encoding on Windows
 if sys.platform == "win32":
@@ -368,6 +375,227 @@ async def _async_test_08_latency_benchmarks():
         assert ttfab < 90.0, f"TTFAB exceeded conversational voice SLA ({ttfab:.2f}s > 90.0s)"
         log_pass("Conversational Voice Latency SLA verified!")
 
+async def _async_test_09_mobile_safari_mp4_streaming():
+    log_header("TC-09: Mobile Safari Simulation (audio/mp4 streaming turn)")
+    query_text = "আপনাদের ডেলিভারি চার্জ কত?"
+    mp3_bytes = await synthesize_test_audio(query_text)
+    
+    p = subprocess.Popen(
+        ['ffmpeg', '-y', '-i', 'pipe:0', '-c:a', 'aac', '-b:a', '64k',
+         '-movflags', 'frag_keyframe+empty_moov+default_base_moof', '-f', 'mp4', 'pipe:1'],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    )
+    mp4_bytes, err = p.communicate(input=mp3_bytes)
+    assert len(mp4_bytes) > 1000, f"Failed to generate MP4 test bytes: {err.decode('utf-8', errors='ignore')}"
+    
+    async with websockets.connect(WS_URL) as ws:
+        await ws.recv() # Initial status
+        await ws.send(json.dumps({
+            "type": "init", 
+            "session_id": "safari_sim_test",
+            "mime_type": "audio/mp4"
+        }))
+        await ws.recv() # Ack
+        
+        # Stream in 4KB chunks
+        chunk_size = 4096
+        for i in range(0, len(mp4_bytes), chunk_size):
+            await ws.send(mp4_bytes[i:i+chunk_size])
+            await asyncio.sleep(0.005)
+            
+        await ws.send(json.dumps({
+            "type": "user_speech_end",
+            "mime_type": "audio/mp4",
+            "timestamp": int(time.time() * 1000)
+        }))
+        
+        got_transcript = False
+        got_rag = False
+        got_llm = False
+        audio_chunks = 0
+        got_audio_end = False
+        
+        while True:
+            try:
+                res = await asyncio.wait_for(ws.recv(), timeout=45.0)
+                if isinstance(res, bytes):
+                    audio_chunks += 1
+                else:
+                    data = json.loads(res)
+                    if data.get("type") == "transcript":
+                        got_transcript = True
+                    elif data.get("type") == "rag_context":
+                        got_rag = True
+                    elif data.get("type") == "llm_response":
+                        got_llm = True
+                    elif data.get("type") == "audio_end":
+                        got_audio_end = True
+                        break
+            except asyncio.TimeoutError:
+                break
+                
+        assert got_transcript, "Safari MP4: Failed to receive transcript"
+        assert got_rag, "Safari MP4: Failed to receive RAG context"
+        assert got_llm, "Safari MP4: Failed to receive LLM response"
+        assert audio_chunks > 5, f"Safari MP4: Expected streaming audio chunks, got {audio_chunks}"
+        assert got_audio_end, "Safari MP4: Missing audio_end termination signal"
+        log_pass(f"Mobile Safari MP4 turn verified! Received {audio_chunks} response audio chunks.")
+
+async def _async_test_10_chrome_webm_opus_streaming():
+    log_header("TC-10: Standard Mobile Chrome Simulation (audio/webm streaming turn)")
+    query_text = "ব্ল্যাক প্রিমিয়াম কটন টি-শার্টের স্টক কেমন?"
+    mp3_bytes = await synthesize_test_audio(query_text)
+    
+    p = subprocess.Popen(
+        ['ffmpeg', '-y', '-i', 'pipe:0', '-c:a', 'libopus', '-b:a', '48k', '-f', 'webm', 'pipe:1'],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    )
+    webm_bytes, err = p.communicate(input=mp3_bytes)
+    assert len(webm_bytes) > 1000, f"Failed to generate WebM test bytes: {err.decode('utf-8', errors='ignore')}"
+    
+    async with websockets.connect(WS_URL) as ws:
+        await ws.recv()
+        await ws.send(json.dumps({"type": "init", "session_id": "chrome_sim_test", "mime_type": "audio/webm"}))
+        await ws.recv()
+        
+        chunk_size = 4096
+        for i in range(0, len(webm_bytes), chunk_size):
+            await ws.send(webm_bytes[i:i+chunk_size])
+            await asyncio.sleep(0.005)
+            
+        await ws.send(json.dumps({"type": "user_speech_end", "mime_type": "audio/webm"}))
+        
+        audio_chunks = 0
+        got_llm = False
+        while True:
+            try:
+                res = await asyncio.wait_for(ws.recv(), timeout=45.0)
+                if isinstance(res, bytes):
+                    audio_chunks += 1
+                else:
+                    data = json.loads(res)
+                    if data.get("type") == "llm_response":
+                        got_llm = True
+                    elif data.get("type") == "audio_end":
+                        break
+            except asyncio.TimeoutError:
+                break
+                
+        assert got_llm, "Chrome WebM Opus: Failed to receive LLM response"
+        assert audio_chunks > 5, f"Chrome WebM Opus: Expected streaming audio chunks, got {audio_chunks}"
+        log_pass(f"Mobile Chrome WebM Opus turn verified! Received {audio_chunks} chunks.")
+
+async def _async_test_11_base64_json_streaming():
+    log_header("TC-11: Base64 JSON Audio Streaming Protocol Negotiation")
+    query_text = "আপনাদের এক্সচেঞ্জ পলিসি কি?"
+    mp3_bytes = await synthesize_test_audio(query_text)
+    
+    async with websockets.connect(WS_URL) as ws:
+        await ws.recv() # Initial status
+        await ws.send(json.dumps({"type": "init", "session_id": "b64_sim_test", "audio_format": "base64"}))
+        await ws.recv() # Ack
+        
+        # Stream in base64 chunks
+        chunk_size = 4096
+        for i in range(0, len(mp3_bytes), chunk_size):
+            b64_str = base64.b64encode(mp3_bytes[i:i+chunk_size]).decode("utf-8")
+            await ws.send(json.dumps({"type": "audio_chunk", "data": b64_str}))
+            await asyncio.sleep(0.005)
+            
+        await ws.send(json.dumps({"type": "user_speech_end"}))
+        
+        json_audio_chunks = 0
+        got_audio_end = False
+        while True:
+            try:
+                res = await asyncio.wait_for(ws.recv(), timeout=45.0)
+                if isinstance(res, str):
+                    data = json.loads(res)
+                    if data.get("type") == "audio_chunk" and data.get("data"):
+                        json_audio_chunks += 1
+                    elif data.get("type") == "audio_end":
+                        got_audio_end = True
+                        break
+            except asyncio.TimeoutError:
+                break
+                
+        assert json_audio_chunks > 5, f"Expected > 5 Base64 JSON audio chunks, got {json_audio_chunks}"
+        assert got_audio_end, "Base64 JSON mode: Missing audio_end termination signal"
+        log_pass(f"Base64 JSON mode verified! Received {json_audio_chunks} JSON audio_chunk messages.")
+
+async def _async_test_12_anti_buffering_zero_byte():
+    log_header("TC-12: Anti-Buffering Resilience — Zero-Byte Audio Turn & Immediate listening Reset")
+    async with websockets.connect(WS_URL) as ws:
+        await ws.recv() # Initial status
+        await ws.send(json.dumps({"type": "init", "session_id": "zero_byte_test"}))
+        await ws.recv() # Ack
+        
+        # User tap button and immediately end speech without audio
+        t_start = time.time()
+        await ws.send(json.dumps({"type": "user_speech_end"}))
+        
+        res = await asyncio.wait_for(ws.recv(), timeout=5.0)
+        t_elapsed = time.time() - t_start
+        data = json.loads(res) if isinstance(res, str) else {}
+        
+        assert data.get("type") == "status" and data.get("status") == "listening", f"Expected immediate listening reset, got: {data}"
+        assert t_elapsed < 2.0, f"Reset took too long: {t_elapsed:.2f}s"
+        log_pass(f"Zero-byte turn immediately recovered in {t_elapsed*1000:.1f}ms without hanging.")
+
+async def _async_test_13_anti_buffering_corrupted_audio():
+    log_header("TC-13: Anti-Buffering Resilience — Corrupted / Non-Audio Payload Graceful Recovery")
+    garbage_bytes = os.urandom(600)
+    
+    async with websockets.connect(WS_URL) as ws:
+        await ws.recv() # Initial status
+        await ws.send(json.dumps({"type": "init", "session_id": "corrupted_audio_test"}))
+        await ws.recv() # Ack
+        
+        await ws.send(garbage_bytes)
+        await ws.send(json.dumps({"type": "user_speech_end"}))
+        
+        got_processing = False
+        got_transcript = False
+        got_listening = False
+        
+        while True:
+            try:
+                res = await asyncio.wait_for(ws.recv(), timeout=25.0)
+                if isinstance(res, bytes):
+                    pass
+                else:
+                    data = json.loads(res)
+                    if data.get("type") == "status" and data.get("status") == "processing":
+                        got_processing = True
+                    elif data.get("type") == "transcript":
+                        got_transcript = True
+                    elif data.get("type") == "status" and data.get("status") == "listening":
+                        got_listening = True
+                        break
+            except asyncio.TimeoutError:
+                break
+                
+        assert got_processing, "Missing status: processing"
+        assert got_transcript, "Missing retry transcript prompt"
+        assert got_listening, "Server failed to return to status: listening"
+        log_pass("Corrupted audio resilience verified! Server synthesized retry audio and returned cleanly to listening.")
+
+async def _async_test_14_ping_pong_keepalive():
+    log_header("TC-14: Mobile WebSocket Keepalive — Ping / Pong Heartbeat")
+    async with websockets.connect(WS_URL) as ws:
+        await ws.recv() # Initial status
+        
+        t_start = time.time()
+        await ws.send(json.dumps({"type": "ping"}))
+        
+        res = await asyncio.wait_for(ws.recv(), timeout=2.0)
+        t_elapsed = time.time() - t_start
+        data = json.loads(res) if isinstance(res, str) else {}
+        
+        assert data.get("type") == "pong", f"Expected type: pong, got: {data}"
+        assert t_elapsed < 0.5, f"Ping-pong latency too high: {t_elapsed:.3f}s"
+        log_pass(f"Ping/Pong keepalive verified in {t_elapsed*1000:.1f}ms!")
+
 # ============================================================================
 # Pytest Synchronous Wrappers
 # ============================================================================
@@ -404,6 +632,30 @@ def test_08_latency_benchmarks():
     ensure_server_running()
     asyncio.run(_async_test_08_latency_benchmarks())
 
+def test_09_mobile_safari_mp4_streaming():
+    ensure_server_running()
+    asyncio.run(_async_test_09_mobile_safari_mp4_streaming())
+
+def test_10_chrome_webm_opus_streaming():
+    ensure_server_running()
+    asyncio.run(_async_test_10_chrome_webm_opus_streaming())
+
+def test_11_base64_json_streaming():
+    ensure_server_running()
+    asyncio.run(_async_test_11_base64_json_streaming())
+
+def test_12_anti_buffering_zero_byte():
+    ensure_server_running()
+    asyncio.run(_async_test_12_anti_buffering_zero_byte())
+
+def test_13_anti_buffering_corrupted_audio():
+    ensure_server_running()
+    asyncio.run(_async_test_13_anti_buffering_corrupted_audio())
+
+def test_14_ping_pong_keepalive():
+    ensure_server_running()
+    asyncio.run(_async_test_14_ping_pong_keepalive())
+
 # ============================================================================
 # Standalone CLI Test Runner
 # ============================================================================
@@ -424,7 +676,13 @@ def main():
         test_05_exchange_policy_rag,
         test_06_barge_in_interruption,
         test_07_audio_stream_integrity,
-        test_08_latency_benchmarks
+        test_08_latency_benchmarks,
+        test_09_mobile_safari_mp4_streaming,
+        test_10_chrome_webm_opus_streaming,
+        test_11_base64_json_streaming,
+        test_12_anti_buffering_zero_byte,
+        test_13_anti_buffering_corrupted_audio,
+        test_14_ping_pong_keepalive
     ]
 
     passed = 0

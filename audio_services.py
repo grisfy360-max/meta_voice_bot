@@ -163,15 +163,29 @@ async def transcribe_audio_bytes(audio_bytes: bytes, mime_type: str = "audio/web
         "Return ONLY the exact transcribed text, without any introductory phrases, formatting, quotes, or notes."
     )
     
-    candidate_models = ["gemini-3.5-transcribe", "gemini-3.5-flash-lite", "gemini-flash-lite-latest", "gemini-2.5-flash"]
+    # Normalize mime_type (strip codecs parameter for clean Gemini ingestion)
+    base_mime = mime_type.split(";")[0].strip().lower()
+    if base_mime not in ["audio/webm", "audio/mp4", "audio/wav", "audio/mp3", "audio/mpeg", "audio/ogg", "audio/aac"]:
+        base_mime = "audio/webm"
+
+    candidate_models = [
+        "gemini-3.8-flash",
+        "gemini-3.5-flash",
+        "gemini-3.5-flash-lite",
+        "gemini-flash-lite-latest",
+        "gemini-2.5-flash"
+    ]
     for model_name in candidate_models:
         try:
-            response = await client.aio.models.generate_content(
-                model=model_name,
-                contents=[
-                    types.Part.from_bytes(data=audio_bytes, mime_type=mime_type),
-                    stt_prompt
-                ]
+            response = await asyncio.wait_for(
+                client.aio.models.generate_content(
+                    model=model_name,
+                    contents=[
+                        types.Part.from_bytes(data=audio_bytes, mime_type=base_mime),
+                        stt_prompt
+                    ]
+                ),
+                timeout=12.0
             )
             transcript = response.text.strip() if response and response.text else ""
             if transcript:

@@ -240,6 +240,9 @@
                 isUserSpeaking: false,
                 silenceTimer: null,
                 speechStartTime: 0,
+                botSpeechStartTime: 0,
+                audioResumeHandlerAttached: false,
+                activeAudioElement: null,
 
                 // WebSocket
                 ws: null,
@@ -308,11 +311,32 @@
 
                 async startCall() {
                     try {
-                        // 1. Initialize AudioContext inside user gesture
+                        // 1. Initialize AudioContext inside user gesture & prime for mobile iOS/Android
                         const AudioCtx = window.AudioContext || window.webkitAudioContext;
                         this.audioContext = new AudioCtx();
                         if (this.audioContext.state === 'suspended') {
                             await this.audioContext.resume();
+                        }
+
+                        // Silent buffer priming to unlock iOS Safari CoreAudio unit
+                        try {
+                            const silentBuf = this.audioContext.createBuffer(1, 1, 22050);
+                            const silentSrc = this.audioContext.createBufferSource();
+                            silentSrc.buffer = silentBuf;
+                            silentSrc.connect(this.audioContext.destination);
+                            silentSrc.start(0);
+                        } catch (e) {}
+
+                        // Auto-resume AudioContext on any subsequent mobile touch/click if backgrounded
+                        if (!this.audioResumeHandlerAttached) {
+                            const autoResume = async () => {
+                                if (this.audioContext && this.audioContext.state === 'suspended') {
+                                    try { await this.audioContext.resume(); } catch (e) {}
+                                }
+                            };
+                            window.addEventListener('touchstart', autoResume, { passive: true });
+                            window.addEventListener('click', autoResume, { passive: true });
+                            this.audioResumeHandlerAttached = true;
                         }
 
                         // 2. Setup Nodes
@@ -327,14 +351,12 @@
                         this.micAnalyser.fftSize = 256;
                         this.micAnalyser.smoothingTimeConstant = 0.7;
 
-                        // 3. Capture Microphone
+                        // 3. Capture Microphone (Relaxed constraints for iOS Safari & Android hardware compatibility)
                         this.micStream = await navigator.mediaDevices.getUserMedia({
                             audio: {
                                 echoCancellation: true,
                                 noiseSuppression: true,
-                                autoGainControl: true,
-                                channelCount: 1,
-                                sampleRate: 16000
+                                autoGainControl: true
                             }
                         });
 
@@ -360,6 +382,9 @@
                                 this.handleServerMessage(msg);
                             } else if (event.data instanceof ArrayBuffer) {
                                 this.incomingAudioChunks.push(event.data);
+                            } else if (event.data instanceof Blob) {
+                                const buf = await event.data.arrayBuffer();
+                                this.incomingAudioChunks.push(buf);
                             }
                         };
 
@@ -389,8 +414,7 @@
                         'audio/webm;codecs=opus',
                         'audio/webm',
                         'audio/mp4',
-                        'audio/aac',
-                        'audio/ogg'
+                        'audio/aac'
                     ];
                     for (const t of types) {
                         if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) {
@@ -433,16 +457,28 @@
                     this.isUserSpeaking = false;
                     this.callState = 'thinking';
 
-                    if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
-                        try { this.mediaRecorder.stop(); } catch (e) {}
-                    }
+                    const dispatchEnd = () => {
+                        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                            this.ws.send(JSON.stringify({ 
+                                type: 'user_speech_end', 
+                                timestamp: Date.now(),
+                                mime_type: this.currentMimeType
+                            }));
+                        }
+                    };
 
-                    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-                        this.ws.send(JSON.stringify({ 
-                            type: 'user_speech_end', 
-                            timestamp: Date.now(),
-                            mime_type: this.currentMimeType
-                        }));
+                    if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+                        // Coordinated turn completion: only dispatch after mediaRecorder has stopped
+                        this.mediaRecorder.onstop = () => {
+                            setTimeout(dispatchEnd, 50);
+                        };
+                        try { 
+                            this.mediaRecorder.stop(); 
+                        } catch (e) {
+                            dispatchEnd();
+                        }
+                    } else {
+                        dispatchEnd();
                     }
                 },
 
@@ -457,8 +493,19 @@
                         this.pendingRagContext = null;
                         this.callState = 'speaking';
                     } else if (msg.type === 'status') {
-                        if (msg.status === 'listening' && this.activeSourceNodes.length === 0) {
+                        if (msg.status === 'listening' && this.activeSourceNodes.length === 0 && !this.activeAudioElement) {
                             this.callState = 'listening';
+                            // Dead-mic recovery: ensure mic recorder is active when returning to listening state
+                            if (!this.mediaRecorder || this.mediaRecorder.state === 'inactive') {
+                                this.startMediaRecorder();
+                            }
+                        }
+                    } else if (msg.type === 'error') {
+                        console.error("Server voice error:", msg.message);
+                        this.addTranscript('bot', '(সার্ভার সংযোগে সমস্যা হয়েছে, অনুগ্রহ করে আবার বলুন)');
+                        this.callState = 'listening';
+                        if (!this.mediaRecorder || this.mediaRecorder.state === 'inactive') {
+                            this.startMediaRecorder();
                         }
                     } else if (msg.type === 'interrupted') {
                         this.flushAudioQueue();
@@ -469,7 +516,7 @@
                             const fullBlob = new Blob(this.incomingAudioChunks, { type: 'audio/mpeg' });
                             this.incomingAudioChunks = [];
                             fullBlob.arrayBuffer().then(buf => {
-                                this.playBotAudioBuffer(buf);
+                                this.playBotAudioBuffer(buf, fullBlob);
                             });
                         }
                     } else if (msg.type === 'audio_chunk' && msg.data) {
@@ -483,10 +530,67 @@
                     }
                 },
 
-                async playBotAudioBuffer(arrayBuffer) {
+                async playBotAudioBuffer(arrayBuffer, blob = null) {
                     try {
                         this.callState = 'speaking';
-                        const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
+                        this.botSpeechStartTime = Date.now();
+
+                        // AudioContext Lifecycle check & resume
+                        if (this.audioContext && this.audioContext.state === 'suspended') {
+                            await this.audioContext.resume();
+                        }
+
+                        // ArrayBuffer cloning to preserve data
+                        const bufferCopy = arrayBuffer.slice(0);
+
+                        // Dual Promise & callback decodeAudioData implementation
+                        const decodeAudio = (buf) => {
+                            return new Promise((resolve, reject) => {
+                                let promiseReturned = false;
+                                try {
+                                    const p = this.audioContext.decodeAudioData(buf, (decoded) => {
+                                        if (!promiseReturned) resolve(decoded);
+                                    }, (err) => {
+                                        if (!promiseReturned) reject(err);
+                                    });
+                                    if (p && typeof p.then === 'function') {
+                                        promiseReturned = true;
+                                        p.then(resolve).catch(reject);
+                                    }
+                                } catch (e) {
+                                    reject(e);
+                                }
+                            });
+                        };
+
+                        let audioBuffer;
+                        try {
+                            audioBuffer = await decodeAudio(bufferCopy);
+                        } catch (decodeErr) {
+                            console.warn("Web Audio decodeAudioData failed, falling back to HTML5 Audio:", decodeErr);
+                            // Seamless HTML5 Audio fallback for strict Apple CoreAudio MP3 frame parsing
+                            const audioBlob = blob || new Blob([arrayBuffer], { type: 'audio/mpeg' });
+                            const audioUrl = URL.createObjectURL(audioBlob);
+                            const audioElem = new Audio(audioUrl);
+                            this.activeAudioElement = audioElem;
+
+                            audioElem.onended = () => {
+                                URL.revokeObjectURL(audioUrl);
+                                this.activeAudioElement = null;
+                                this.callState = 'listening';
+                                this.startMediaRecorder();
+                            };
+                            audioElem.onerror = (e) => {
+                                console.error("HTML5 Audio playback error:", e);
+                                URL.revokeObjectURL(audioUrl);
+                                this.activeAudioElement = null;
+                                this.callState = 'listening';
+                                this.startMediaRecorder();
+                            };
+                            await audioElem.play();
+                            return;
+                        }
+
                         const source = this.audioContext.createBufferSource();
                         source.buffer = audioBuffer;
                         source.connect(this.botGainNode);
@@ -502,7 +606,7 @@
                             }
                         };
                     } catch (e) {
-                        console.error("Error decoding bot audio:", e);
+                        console.error("Error in playBotAudioBuffer:", e);
                         this.callState = 'listening';
                         this.startMediaRecorder();
                     }
@@ -521,6 +625,13 @@
                 },
 
                 flushAudioQueue() {
+                    if (this.activeAudioElement) {
+                        try {
+                            this.activeAudioElement.pause();
+                            this.activeAudioElement.currentTime = 0;
+                        } catch (e) {}
+                        this.activeAudioElement = null;
+                    }
                     for (const src of this.activeSourceNodes) {
                         try {
                             src.stop(0);
@@ -616,7 +727,7 @@
                             if (!this.silenceTimer) {
                                 this.silenceTimer = setTimeout(() => {
                                     const speechDuration = Date.now() - this.speechStartTime;
-                                    if (speechDuration >= 600) {
+                                    if (speechDuration >= 250) {
                                         this.finishUserTurn();
                                     } else {
                                         this.isUserSpeaking = false;
@@ -627,18 +738,23 @@
                         }
                     }
 
-                    // Client VAD Check for Barge-in
+                    // Client VAD Check for Barge-in with Acoustic Feedback Guard
                     if (this.callState === 'speaking' && this.micAnalyser && !this.isMuted) {
-                        const micData = new Uint8Array(this.micAnalyser.fftSize);
-                        this.micAnalyser.getByteTimeDomainData(micData);
-                        let sum = 0;
-                        for (let i = 0; i < micData.length; i++) {
-                            const val = (micData[i] - 128) / 128;
-                            sum += val * val;
-                        }
-                        const rms = Math.sqrt(sum / micData.length);
-                        if (rms > 0.08) {
-                            this.triggerBargeIn();
+                        const speechElapsed = Date.now() - (this.botSpeechStartTime || 0);
+                        // Suppress mic check for first 800ms of bot speech to prevent mobile speaker self-interruption
+                        if (speechElapsed > 800) {
+                            const micData = new Uint8Array(this.micAnalyser.fftSize);
+                            this.micAnalyser.getByteTimeDomainData(micData);
+                            let sum = 0;
+                            for (let i = 0; i < micData.length; i++) {
+                                const val = (micData[i] - 128) / 128;
+                                sum += val * val;
+                            }
+                            const rms = Math.sqrt(sum / micData.length);
+                            // Raised RMS threshold (0.22) on mobile speakerphone to prevent self-interruption
+                            if (rms > 0.22) {
+                                this.triggerBargeIn();
+                            }
                         }
                     }
 

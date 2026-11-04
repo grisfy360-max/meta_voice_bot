@@ -681,6 +681,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 import base64
 import uuid
 import re
+import time
 from typing import Optional
 from google import genai
 from audio_services import transcribe_audio_bytes, stream_edge_tts, get_gemini_api_key
@@ -762,13 +763,16 @@ async def generate_voice_response(
     
     full_prompt = "\n\n".join(messages)
     
-    candidate_models = ["gemini-3.5-flash-lite", "gemini-flash-lite-latest", "gemini-3.5-flash", "gemini-2.5-flash"]
+    candidate_models = ["gemini-3.8-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-flash-lite-latest", "gemini-2.5-flash"]
     for model_name in candidate_models:
         for attempt in range(2):
             try:
-                response = await client.aio.models.generate_content(
-                    model=model_name,
-                    contents=full_prompt
+                response = await asyncio.wait_for(
+                    client.aio.models.generate_content(
+                        model=model_name,
+                        contents=full_prompt
+                    ),
+                    timeout=12.0
                 )
                 if response and response.text and response.text.strip():
                     cleaned = clean_voice_text(response.text.strip())
@@ -788,6 +792,7 @@ class CallSession:
         self.chat_history: list = []
         self.audio_format: str = "binary"  # 'binary' or 'base64'
         self.mime_type: str = "audio/webm"
+        self.turn_start_time: float = 0.0
 
 @app.websocket("/ws/live-call")
 async def websocket_live_call_endpoint(websocket: WebSocket):
@@ -819,22 +824,41 @@ async def websocket_live_call_endpoint(websocket: WebSocket):
         try:
             await websocket.send_json({"type": "status", "status": "processing"})
             
-            # Step 1: Zero-disk inline STT
-            mime_type = getattr(session, "mime_type", "audio/webm")
+            # Step 1: Zero-disk inline STT with comprehensive magic byte sniffing
+            mime_type = getattr(session, "mime_type", "audio/webm").split(";")[0].strip().lower()
             if audio_payload.startswith(b"RIFF"):
                 mime_type = "audio/wav"
-            elif audio_payload.startswith(b"ID3") or (len(audio_payload) >= 2 and audio_payload[0] == 0xFF):
-                mime_type = "audio/mp3"
-            elif b"ftyp" in audio_payload[:32] or b"moov" in audio_payload[:32]:
+            elif audio_payload.startswith(b"\x1a\x45\xdf\xa3"):
+                mime_type = "audio/webm"
+            elif audio_payload.startswith(b"OggS"):
+                mime_type = "audio/ogg"
+            elif b"ftyp" in audio_payload[:64] or b"moov" in audio_payload[:64]:
                 mime_type = "audio/mp4"
+            elif audio_payload.startswith(b"ID3") or (len(audio_payload) >= 2 and audio_payload[0] == 0xFF and (audio_payload[1] & 0xE0) == 0xE0):
+                mime_type = "audio/mp3"
+            elif len(audio_payload) >= 2 and audio_payload[0] == 0xFF and (audio_payload[1] & 0xF6) == 0xF0:
+                mime_type = "audio/aac"
                 
             transcript = await transcribe_audio_bytes(audio_payload, mime_type=mime_type)
             if not transcript:
-                print("[WS Warning] Empty transcript. Resetting to listening.")
+                print("[WS Warning] Empty transcript. Synthesizing spoken retry prompt.")
+                retry_text = "কথা স্পষ্ট শোনা যায়নি, অনুগ্রহ করে আবার বলুন।"
                 await websocket.send_json({
                     "type": "transcript",
-                    "text": "(কথা স্পষ্ট শোনা যায়নি, অনুগ্রহ করে আবার বলুন)"
+                    "text": f"({retry_text})"
                 })
+                await websocket.send_json({"type": "llm_response", "text": retry_text})
+                await websocket.send_json({"type": "status", "status": "speaking"})
+                
+                async for audio_chunk in stream_edge_tts(retry_text, voice="bn-BD-NabanitaNeural"):
+                    if session.audio_format == "base64":
+                        b64_data = base64.b64encode(audio_chunk).decode("utf-8")
+                        await websocket.send_json({"type": "audio_chunk", "data": b64_data})
+                    else:
+                        await websocket.send_bytes(audio_chunk)
+                    await asyncio.sleep(0.001)
+                    
+                await websocket.send_json({"type": "audio_end"})
                 await websocket.send_json({"type": "status", "status": "listening"})
                 return
                 
@@ -889,7 +913,11 @@ async def websocket_live_call_endpoint(websocket: WebSocket):
             # Direct binary audio chunk
             if "bytes" in message and message["bytes"]:
                 if session.active_task and not session.active_task.done():
-                    await cancel_active_turn()
+                    # Check if this is a trailing chunk within 400ms grace window of turn start
+                    if time.time() - getattr(session, "turn_start_time", 0.0) < 0.40:
+                        pass
+                    else:
+                        await cancel_active_turn()
                 session.audio_buffer.extend(message["bytes"])
                 continue
                 
@@ -915,7 +943,10 @@ async def websocket_live_call_endpoint(websocket: WebSocket):
                     
                 elif msg_type == "audio_chunk":
                     if session.active_task and not session.active_task.done():
-                        await cancel_active_turn()
+                        if time.time() - getattr(session, "turn_start_time", 0.0) < 0.40:
+                            pass
+                        else:
+                            await cancel_active_turn()
                     b64_data = payload.get("data", "")
                     if b64_data:
                         session.audio_buffer.extend(base64.b64decode(b64_data))
@@ -927,10 +958,14 @@ async def websocket_live_call_endpoint(websocket: WebSocket):
                 elif msg_type in ["audio_end", "user_speech_end"]:
                     if payload.get("mime_type"):
                         session.mime_type = payload["mime_type"]
+                    # 150ms grace period handles mobile async WebSocket chunk arrival race conditions
+                    if len(session.audio_buffer) == 0:
+                        await asyncio.sleep(0.15)
                     if len(session.audio_buffer) > 0:
                         raw_audio = bytes(session.audio_buffer)
                         session.audio_buffer.clear()
                         await cancel_active_turn()
+                        session.turn_start_time = time.time()
                         session.active_task = asyncio.create_task(run_turn(raw_audio))
                     else:
                         await websocket.send_json({"type": "status", "status": "listening"})
