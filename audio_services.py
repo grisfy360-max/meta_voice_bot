@@ -1,4 +1,4 @@
-﻿import os
+import os
 import requests
 
 def download_audio_from_meta(media_id: str, access_token: str, save_path: str):
@@ -120,5 +120,107 @@ def text_to_speech(text: str, api_key: str, save_path: str, override_voice: str 
         tts.save(save_path)
         
     return save_path
+
+
+import io
+import json
+import asyncio
+from typing import AsyncGenerator
+from google import genai
+from google.genai import types
+import edge_tts
+
+def get_gemini_api_key() -> str:
+    """Helper to retrieve the configured Gemini API key from config.json or environment."""
+    config_path = os.path.join(os.path.dirname(__file__), "config.json")
+    try:
+        with open(config_path, "r", encoding="utf-8-sig") as f:
+            cfg = json.load(f)
+            key = cfg.get("gemini_api_key")
+            if key:
+                return key
+    except Exception:
+        pass
+    return os.getenv("GEMINI_API_KEY", "")
+
+async def transcribe_audio_bytes(audio_bytes: bytes, mime_type: str = "audio/webm") -> str:
+    """
+    Transcribes raw audio bytes (WebM, WAV, MP3) directly in memory using Gemini Flash.
+    Eliminates disk I/O, temporary files, and File API polling.
+    """
+    if not audio_bytes or len(audio_bytes) < 100:
+        return ""
+    
+    api_key = get_gemini_api_key()
+    if not api_key:
+        print("[STT Error] No Gemini API key found.")
+        return ""
+        
+    client = genai.Client(api_key=api_key)
+    
+    stt_prompt = (
+        "Accurately transcribe this audio recording in Bengali (বাংলা). "
+        "Return ONLY the exact transcribed text, without any introductory phrases, formatting, quotes, or notes."
+    )
+    
+    candidate_models = ["gemini-3.5-transcribe", "gemini-3.5-flash-lite", "gemini-flash-lite-latest", "gemini-2.5-flash"]
+    for model_name in candidate_models:
+        try:
+            response = await client.aio.models.generate_content(
+                model=model_name,
+                contents=[
+                    types.Part.from_bytes(data=audio_bytes, mime_type=mime_type),
+                    stt_prompt
+                ]
+            )
+            transcript = response.text.strip() if response and response.text else ""
+            if transcript:
+                return transcript
+        except Exception as e:
+            print(f"[STT Warning] Model {model_name} failed: {e}")
+            continue
+            
+    return ""
+
+async def stream_edge_tts(
+    text: str, 
+    voice: str = "bn-BD-NabanitaNeural"
+) -> AsyncGenerator[bytes, None]:
+    """
+    Asynchronously streams synthesized Bengali speech as MP3 byte chunks.
+    Falls back to in-memory gTTS if Edge-TTS service is unavailable or throttled.
+    """
+    if not text or not text.strip():
+        return
+        
+    clean_text = text.replace("*", "").replace("#", "").strip()
+    
+    try:
+        communicate = edge_tts.Communicate(clean_text, voice)
+        has_audio = False
+        async for chunk in communicate.stream():
+            if chunk["type"] == "audio" and chunk["data"]:
+                has_audio = True
+                yield chunk["data"]
+        if has_audio:
+            return
+    except Exception as edge_err:
+        print(f"[TTS Alert] Edge-TTS error ({edge_err}). Activating in-memory gTTS fallback...")
+        
+    try:
+        def generate_gtts_bytes(t: str) -> bytes:
+            buf = io.BytesIO()
+            tts = gTTS(text=t, lang="bn", slow=False)
+            tts.write_to_fp(buf)
+            buf.seek(0)
+            return buf.read()
+            
+        audio_bytes = await asyncio.to_thread(generate_gtts_bytes, clean_text)
+        chunk_size = 4096
+        for i in range(0, len(audio_bytes), chunk_size):
+            yield audio_bytes[i:i + chunk_size]
+    except Exception as fallback_err:
+        print(f"[TTS Critical] Both Edge-TTS and fallback failed: {fallback_err}")
+
 
 

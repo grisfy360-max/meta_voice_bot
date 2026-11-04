@@ -1,4 +1,4 @@
-﻿fastapi
+fastapi
 uvicorn
 requests
 pydantic
@@ -12,5 +12,6 @@ gTTS
 google-genai
 aiofiles
 httpx
-
 duckduckgo-search
+edge-tts>=7.3.1
+websockets>=12.0

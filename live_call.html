@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="bn" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ভয়েস কল অ্যাসিস্ট্যান্ট | Meta Voice Bot</title>
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Tailwind CSS & Alpine.js -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        n8n: '#ff6d5a',
+                        n8ndark: '#ea5b49'
+                    },
+                    fontFamily: {
+                        sans: ['"Hind Siliguri"', 'Inter', 'system-ui', 'sans-serif']
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        [x-cloak] { display: none !important; }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: rgba(31, 41, 55, 0.5); border-radius: 8px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(75, 85, 99, 0.8); border-radius: 8px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(107, 114, 128, 1); }
+        .n8n-glow { box-shadow: 0 0 25px rgba(255, 109, 90, 0.35); }
+        .emerald-glow { box-shadow: 0 0 25px rgba(16, 185, 129, 0.35); }
+    </style>
+</head>
+<body x-data="voiceCallApp()" x-init="initApp()" class="font-sans h-screen flex flex-col bg-gray-950 text-gray-100 overflow-hidden select-none">
+
+    <!-- Top Navigation Header -->
+    <header class="h-16 border-b border-gray-800 bg-gray-900/80 backdrop-blur-md flex items-center justify-between px-6 z-20">
+        <div class="flex items-center gap-3">
+            <div class="w-9 h-9 bg-n8n rounded-lg flex items-center justify-center text-white font-bold text-lg shadow-md">
+                N
+            </div>
+            <div>
+                <h1 class="text-base font-bold text-white flex items-center gap-2">
+                    ভয়েস কল অ্যাসিস্ট্যান্ট
+                    <span class="text-[11px] px-2 py-0.5 rounded-full bg-n8n/15 text-n8n font-semibold border border-n8n/30">RAG AI</span>
+                </h1>
+                <p class="text-xs text-gray-400">রিয়েল-টাইম বাংলা কথোপকথন</p>
+            </div>
+        </div>
+
+        <!-- Center Status Indicator -->
+        <div class="hidden sm:flex items-center gap-2 px-4 py-1.5 rounded-full bg-gray-800/90 border border-gray-700/80 shadow-inner">
+            <span class="w-2.5 h-2.5 rounded-full" 
+                  :class="{
+                      'bg-gray-500': callState === 'disconnected',
+                      'bg-emerald-500 animate-pulse': callState === 'listening',
+                      'bg-indigo-500 animate-ping': callState === 'thinking',
+                      'bg-n8n animate-bounce': callState === 'speaking'
+                  }"></span>
+            <span class="text-xs font-medium" x-text="statusBadgeText" 
+                  :class="{
+                      'text-gray-400': callState === 'disconnected',
+                      'text-emerald-400': callState === 'listening',
+                      'text-indigo-400': callState === 'thinking',
+                      'text-n8n': callState === 'speaking'
+                  }"></span>
+        </div>
+
+        <!-- Right Controls: Duration & Dashboard Link -->
+        <div class="flex items-center gap-3">
+            <div x-show="callState !== 'disconnected'" x-cloak class="text-xs font-mono text-gray-300 bg-gray-800 px-3 py-1.5 rounded-md border border-gray-700">
+                <span x-text="callDurationText">00:00</span>
+            </div>
+            <a href="/" class="text-xs text-gray-300 hover:text-white bg-gray-800 hover:bg-gray-700 border border-gray-700 px-3 py-1.5 rounded-md transition flex items-center gap-1.5">
+                <svg class="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+                ড্যাশবোর্ড
+            </a>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="flex-1 flex flex-col md:flex-row p-4 md:p-6 gap-4 overflow-hidden max-w-7xl mx-auto w-full">
+
+        <!-- Left / Top: Interactive Calling Stage & Waveform Canvas -->
+        <div class="flex-1 flex flex-col bg-gray-900/90 rounded-2xl border border-gray-800 p-6 shadow-2xl relative justify-between overflow-hidden">
+            
+            <!-- Ambient Stage Glow Background -->
+            <div class="absolute inset-0 pointer-events-none opacity-20 transition-all duration-700"
+                 :class="{
+                     'bg-radial-gradient from-emerald-500/30 to-transparent': callState === 'listening',
+                     'bg-radial-gradient from-indigo-500/30 to-transparent': callState === 'thinking',
+                     'bg-radial-gradient from-n8n/40 to-transparent': callState === 'speaking'
+                 }"></div>
+
+            <!-- Stage Header Status -->
+            <div class="flex items-center justify-between z-10">
+                <div class="flex items-center gap-2">
+                    <span class="text-xs font-medium uppercase tracking-wider text-gray-400">অডিও স্টেজ</span>
+                    <span x-show="latencyMs > 0" x-cloak class="text-[11px] font-mono text-gray-400 bg-gray-800/80 px-2 py-0.5 rounded border border-gray-700" x-text="`লেটেন্সি: ${latencyMs}ms`"></span>
+                </div>
+                <div x-show="callState === 'speaking'" x-cloak class="flex items-center gap-1.5 text-xs text-n8n bg-n8n/10 px-2.5 py-1 rounded-full border border-n8n/30 animate-pulse">
+                    <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M9.383 3.076A1 1 0 0110 4v12a1 1 0 01-1.707.707L4.586 13H2a1 1 0 01-1-1V8a1 1 0 011-1h2.586l3.707-3.707a1 1 0 011.09-.217zM14.657 2.929a1 1 0 011.414 0A9.972 9.972 0 0119 10a9.972 9.972 0 01-2.929 7.071 1 1 0 01-1.414-1.414A7.971 7.971 0 0017 10c0-2.21-.894-4.208-2.343-5.657a1 1 0 010-1.414zm-2.829 2.828a1 1 0 011.415 0A5.983 5.983 0 0115 10a5.984 5.984 0 01-1.757 4.243 1 1 0 01-1.415-1.415A3.984 3.984 0 0013 10a3.983 3.983 0 00-1.172-2.828 1 1 0 010-1.415z" clip-rule="evenodd"></path></svg>
+                    বট কথা বলছে
+                </div>
+            </div>
+
+            <!-- Central Canvas & Visualizer -->
+            <div class="my-auto relative flex flex-col items-center justify-center w-full min-h-[220px]">
+                <canvas id="waveformCanvas" class="w-full h-48 md:h-64 rounded-xl block bg-gray-950/70 border border-gray-800/80 shadow-inner"></canvas>
+                
+                <!-- Status Overlay Over Canvas -->
+                <div class="absolute pointer-events-none flex flex-col items-center text-center p-4">
+                    <p class="text-sm md:text-base font-semibold text-white drop-shadow-md" x-text="stagePromptText"></p>
+                    <p class="text-xs text-gray-400 mt-1 max-w-sm" x-text="stageSubText"></p>
+                </div>
+            </div>
+
+            <!-- Floating Action Dock Inside Stage -->
+            <div class="z-10 flex items-center justify-center gap-5 pt-4 border-t border-gray-800/80">
+                <!-- Mute Toggle Button -->
+                <button @click="toggleMute()" 
+                        :disabled="callState === 'disconnected'"
+                        :class="isMuted ? 'bg-amber-600/20 text-amber-400 border-amber-500/40' : 'bg-gray-800 text-gray-300 hover:text-white border-gray-700'"
+                        class="p-3.5 rounded-full border transition hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                        title="মাইক মিউট/আনমিউট">
+                    <svg x-show="!isMuted" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path></svg>
+                    <svg x-show="isMuted" x-cloak class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2"></path></svg>
+                </button>
+
+                <!-- Primary Call Button (Green Start / Red End) -->
+                <button @click="toggleCall()" 
+                        class="relative group p-5 rounded-full text-white font-semibold shadow-xl transition-all duration-300 transform active:scale-95"
+                        :class="callState === 'disconnected' ? 'bg-emerald-600 hover:bg-emerald-500 emerald-glow' : 'bg-rose-600 hover:bg-rose-500 shadow-rose-600/30'">
+                    <!-- Start Call Icon -->
+                    <svg x-show="callState === 'disconnected'" class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"></path></svg>
+                    <!-- End Call Icon -->
+                    <svg x-show="callState !== 'disconnected'" x-cloak class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 8l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2M5 3a2 2 0 00-2 2v1c0 8.284 6.716 15 15 15h1a2 2 0 002-2v-3.28a1 1 0 00-.684-.948l-4.493-1.498a1 1 0 00-1.21.502l-1.13 2.257a11.042 11.042 0 01-5.516-5.517l2.257-1.128a1 1 0 00.502-1.21L9.228 3.683A1 1 0 008.279 3H5z"></path></svg>
+                </button>
+
+                <!-- Client Barge-In Button (Tap-to-Interrupt) -->
+                <button @click="triggerBargeIn()" 
+                        :disabled="callState !== 'speaking'"
+                        class="px-4 py-3 rounded-full border transition flex items-center gap-2 text-xs font-semibold disabled:opacity-30 disabled:cursor-not-allowed"
+                        :class="callState === 'speaking' ? 'bg-n8n/15 hover:bg-n8n/25 text-n8n border-n8n/50 n8n-glow animate-pulse' : 'bg-gray-800 text-gray-500 border-gray-700'">
+                    <svg class="w-4 h-4 text-n8n" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    <span>কথা থামান</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Right / Bottom: Live Conversation Feed & RAG Context -->
+        <div class="w-full md:w-96 flex flex-col bg-gray-900/90 rounded-2xl border border-gray-800 shadow-2xl overflow-hidden">
+            <!-- Feed Header -->
+            <div class="p-4 border-b border-gray-800 bg-gray-900 flex items-center justify-between">
+                <span class="text-xs font-bold uppercase tracking-wider text-gray-300 flex items-center gap-2">
+                    <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
+                    লাইভ ট্রানস্ক্রিপ্ট
+                </span>
+                <span class="text-[11px] text-gray-500" x-text="transcripts.length + ' টি বার্তা'"></span>
+            </div>
+
+            <!-- Feed Content (Scrollable) -->
+            <div id="transcriptFeed" class="flex-1 p-4 overflow-y-auto space-y-3 custom-scrollbar text-sm">
+                <!-- Welcome Hint when Empty -->
+                <div x-show="transcripts.length === 0" class="h-full flex flex-col items-center justify-center text-center text-gray-500 py-12">
+                    <svg class="w-10 h-10 text-gray-700 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path></svg>
+                    <p class="text-xs">কল শুরু হলে এখানে বাংলা কথোপকথন এবং RAG তথ্য প্রদর্শিত হবে।</p>
+                </div>
+
+                <!-- Messages Feed -->
+                <template x-for="(msg, index) in transcripts" :key="index">
+                    <div class="flex flex-col space-y-1">
+                        <!-- Message Bubble -->
+                        <div :class="msg.sender === 'user' ? 'ml-auto bg-emerald-950/40 text-emerald-100 border-emerald-500/30' : 'mr-auto bg-gray-800 text-gray-100 border-gray-700'"
+                             class="max-w-[85%] px-3.5 py-2.5 rounded-2xl border shadow-sm text-xs leading-relaxed">
+                            <div class="flex items-center justify-between gap-2 mb-1">
+                                <span class="font-bold text-[10px] uppercase tracking-wider"
+                                      :class="msg.sender === 'user' ? 'text-emerald-400' : 'text-n8n'"
+                                      x-text="msg.sender === 'user' ? 'আপনি' : 'অ্যাসিস্ট্যান্ট'"></span>
+                                <span class="text-[10px] text-gray-500" x-text="msg.time"></span>
+                            </div>
+                            <p x-text="msg.text"></p>
+                        </div>
+
+                        <!-- Optional ChromaDB Context Accordion for Bot Response -->
+                        <div x-show="msg.ragContext" x-cloak class="mr-auto max-w-[85%] mt-1">
+                            <details class="text-[11px] bg-gray-900 border border-gray-800 rounded-lg p-2 text-gray-400">
+                                <summary class="cursor-pointer text-indigo-400 font-medium hover:underline flex items-center gap-1">
+                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                    ChromaDB নলেজবেস রেফারেন্স
+                                </summary>
+                                <p class="mt-1 text-gray-300 font-mono text-[10px] whitespace-pre-wrap bg-black/40 p-1.5 rounded" x-text="msg.ragContext"></p>
+                            </details>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Client-Side JavaScript Logic -->
+    <script>
+        function voiceCallApp() {
+            return {
+                callState: 'disconnected', // 'disconnected', 'listening', 'thinking', 'speaking'
+                isMuted: false,
+                latencyMs: 0,
+                callDuration: 0,
+                timerInterval: null,
+                transcripts: [],
+                pendingRagContext: null,
+
+                // Web Audio API & Media
+                audioContext: null,
+                micStream: null,
+                mediaRecorder: null,
+                micAnalyser: null,
+                botAnalyser: null,
+                botGainNode: null,
+                activeSourceNodes: [],
+                nextPlayTime: 0,
+                isReceivingAudio: false,
+
+                // WebSocket
+                ws: null,
+
+                // Computed Status
+                get statusBadgeText() {
+                    if (this.callState === 'disconnected') return 'সংযোগ বিচ্ছিন্ন';
+                    if (this.callState === 'listening') return 'শুনছি... বলুন';
+                    if (this.callState === 'thinking') return 'চিন্তা করছি...';
+                    if (this.callState === 'speaking') return 'কথা বলছি...';
+                    return 'সংযুক্ত';
+                },
+
+                get stagePromptText() {
+                    if (this.callState === 'disconnected') return 'কল শুরু করতে নিচের সবুজ বাটনে চাপ দিন';
+                    if (this.callState === 'listening') return 'আপনার প্রশ্ন করুন, আমি মনোযোগ দিয়ে শুনছি...';
+                    if (this.callState === 'thinking') return 'নলেজবেস থেকে সঠিক তথ্য যাচাই করা হচ্ছে...';
+                    if (this.callState === 'speaking') return 'উত্তর দিচ্ছি... চাইলে যেকোনো মুহূর্তে কথা বলে থামাতে পারেন';
+                    return '';
+                },
+
+                get stageSubText() {
+                    if (this.callState === 'disconnected') return 'ডেলিভারি চার্জ, প্রোডাক্ট স্টক বা এক্সচেঞ্জ পলিসি সম্পর্কে জিজ্ঞাসা করুন';
+                    if (this.callState === 'listening') return 'কথোপকথন শেষে একটু বিরতি দিন, স্বয়ংক্রিয়ভাবে উত্তর আসবে';
+                    if (this.callState === 'thinking') return 'ChromaDB ভেক্টর স্টোর ও Gemini Flash সক্রিয়';
+                    if (this.callState === 'speaking') return 'ফুল-ডুপ্লেক্স বার্জ-ইন সক্রিয়';
+                    return '';
+                },
+
+                get callDurationText() {
+                    const m = Math.floor(this.callDuration / 60).toString().padStart(2, '0');
+                    const s = (this.callDuration % 60).toString().padStart(2, '0');
+                    return `${m}:${s}`;
+                },
+
+                initApp() {
+                    this.initCanvas();
+                },
+
+                initCanvas() {
+                    const canvas = document.getElementById('waveformCanvas');
+                    if (!canvas) return;
+                    const ctx = canvas.getContext('2d');
+                    
+                    const resize = () => {
+                        canvas.width = canvas.clientWidth * window.devicePixelRatio;
+                        canvas.height = canvas.clientHeight * window.devicePixelRatio;
+                        ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+                    };
+                    resize();
+                    window.addEventListener('resize', resize);
+                    this.renderLoop();
+                },
+
+                async toggleCall() {
+                    if (this.callState === 'disconnected') {
+                        await this.startCall();
+                    } else {
+                        this.endCall();
+                    }
+                },
+
+                async startCall() {
+                    try {
+                        // 1. Initialize AudioContext inside user gesture
+                        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                        this.audioContext = new AudioCtx();
+                        if (this.audioContext.state === 'suspended') {
+                            await this.audioContext.resume();
+                        }
+
+                        // 2. Setup Nodes
+                        this.botGainNode = this.audioContext.createGain();
+                        this.botAnalyser = this.audioContext.createAnalyser();
+                        this.botAnalyser.fftSize = 256;
+                        this.botAnalyser.smoothingTimeConstant = 0.8;
+                        this.botGainNode.connect(this.botAnalyser);
+                        this.botAnalyser.connect(this.audioContext.destination);
+
+                        this.micAnalyser = this.audioContext.createAnalyser();
+                        this.micAnalyser.fftSize = 256;
+                        this.micAnalyser.smoothingTimeConstant = 0.7;
+
+                        // 3. Capture Microphone
+                        this.micStream = await navigator.mediaDevices.getUserMedia({
+                            audio: {
+                                echoCancellation: true,
+                                noiseSuppression: true,
+                                autoGainControl: true,
+                                channelCount: 1,
+                                sampleRate: 16000
+                            }
+                        });
+
+                        const micSource = this.audioContext.createMediaStreamSource(this.micStream);
+                        micSource.connect(this.micAnalyser); // Note: Isolated from destination to avoid loopback!
+
+                        // 4. Connect WebSocket
+                        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                        const wsUrl = `${protocol}//${window.location.host}/ws/live-call`;
+                        this.ws = new WebSocket(wsUrl);
+                        this.ws.binaryType = 'arraybuffer';
+
+                        this.ws.onopen = () => {
+                            this.callState = 'listening';
+                            this.startTimer();
+                            this.ws.send(JSON.stringify({ type: 'init', session_id: 'browser_' + Date.now() }));
+                            this.startMediaRecorder();
+                        };
+
+                        this.ws.onmessage = async (event) => {
+                            if (typeof event.data === 'string') {
+                                const msg = JSON.parse(event.data);
+                                this.handleServerMessage(msg);
+                            } else if (event.data instanceof ArrayBuffer) {
+                                await this.enqueueAudioBuffer(event.data);
+                            }
+                        };
+
+                        this.ws.onclose = () => {
+                            this.endCall();
+                        };
+
+                        this.ws.onerror = (err) => {
+                            console.error("WebSocket error:", err);
+                            this.endCall();
+                        };
+
+                    } catch (err) {
+                        alert("মাইক্রোফোন অ্যাক্সেস করতে সমস্যা হয়েছে: " + err.message);
+                        this.endCall();
+                    }
+                },
+
+                startMediaRecorder() {
+                    let mimeType = 'audio/webm;codecs=opus';
+                    if (!MediaRecorder.isTypeSupported(mimeType)) mimeType = 'audio/webm';
+
+                    this.mediaRecorder = new MediaRecorder(this.micStream, { mimeType });
+                    this.mediaRecorder.ondataavailable = (e) => {
+                        if (e.data.size > 0 && this.ws && this.ws.readyState === WebSocket.OPEN && !this.isMuted) {
+                            e.data.arrayBuffer().then(buf => {
+                                if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                                    this.ws.send(buf);
+                                }
+                            });
+                        }
+                    };
+                    this.mediaRecorder.start(250); // 250ms chunks for responsive streaming
+                },
+
+                handleServerMessage(msg) {
+                    if (msg.type === 'transcript') {
+                        this.addTranscript('user', msg.text);
+                        this.callState = 'thinking';
+                    } else if (msg.type === 'rag_context') {
+                        this.pendingRagContext = msg.context;
+                    } else if (msg.type === 'llm_response') {
+                        this.addTranscript('bot', msg.text, this.pendingRagContext);
+                        this.pendingRagContext = null;
+                        this.callState = 'speaking';
+                    } else if (msg.type === 'status') {
+                        if (msg.status === 'listening' && this.activeSourceNodes.length === 0) {
+                            this.callState = 'listening';
+                        }
+                    } else if (msg.type === 'interrupted') {
+                        this.flushAudioQueue();
+                        this.callState = 'listening';
+                    } else if (msg.type === 'audio_end') {
+                        this.isReceivingAudio = false;
+                    } else if (msg.type === 'audio_chunk' && msg.data) {
+                        // Support JSON base64 audio fallback
+                        const binaryStr = atob(msg.data);
+                        const len = binaryStr.length;
+                        const bytes = new Uint8Array(len);
+                        for (let i = 0; i < len; i++) {
+                            bytes[i] = binaryStr.charCodeAt(i);
+                        }
+                        this.enqueueAudioBuffer(bytes.buffer);
+                    }
+                },
+
+                async enqueueAudioBuffer(arrayBuffer) {
+                    try {
+                        this.isReceivingAudio = true;
+                        this.callState = 'speaking';
+                        const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
+                        const source = this.audioContext.createBufferSource();
+                        source.buffer = audioBuffer;
+                        source.connect(this.botGainNode);
+
+                        const now = this.audioContext.currentTime;
+                        const startTime = Math.max(now, this.nextPlayTime);
+                        source.start(startTime);
+                        this.nextPlayTime = startTime + audioBuffer.duration;
+                        this.activeSourceNodes.push(source);
+
+                        source.onended = () => {
+                            this.activeSourceNodes = this.activeSourceNodes.filter(s => s !== source);
+                            if (this.activeSourceNodes.length === 0 && !this.isReceivingAudio) {
+                                this.callState = 'listening';
+                                this.nextPlayTime = 0;
+                            }
+                        };
+                    } catch (e) {
+                        console.warn("Decode audio error (partial MP3 frame):", e);
+                    }
+                },
+
+                triggerBargeIn() {
+                    // 1. Instantly stop all scheduled audio buffer playback
+                    this.flushAudioQueue();
+
+                    // 2. Dispatch barge_in to server
+                    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                        this.ws.send(JSON.stringify({ type: 'barge_in', timestamp: Date.now() }));
+                    }
+
+                    // 3. Reset state to listening
+                    this.callState = 'listening';
+                },
+
+                flushAudioQueue() {
+                    for (const src of this.activeSourceNodes) {
+                        try {
+                            src.stop(0);
+                            src.disconnect();
+                        } catch (e) {}
+                    }
+                    this.activeSourceNodes = [];
+                    this.nextPlayTime = 0;
+                    this.isReceivingAudio = false;
+                },
+
+                toggleMute() {
+                    this.isMuted = !this.isMuted;
+                    if (this.micStream) {
+                        this.micStream.getAudioTracks().forEach(track => track.enabled = !this.isMuted);
+                    }
+                },
+
+                endCall() {
+                    this.flushAudioQueue();
+                    if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+                        try { this.mediaRecorder.stop(); } catch (e) {}
+                    }
+                    if (this.micStream) {
+                        this.micStream.getTracks().forEach(track => track.stop());
+                        this.micStream = null;
+                    }
+                    if (this.ws) {
+                        try {
+                            this.ws.send(JSON.stringify({ type: 'end_call' }));
+                            this.ws.close();
+                        } catch (e) {}
+                        this.ws = null;
+                    }
+                    if (this.timerInterval) {
+                        clearInterval(this.timerInterval);
+                        this.timerInterval = null;
+                    }
+                    this.callState = 'disconnected';
+                    this.callDuration = 0;
+                },
+
+                startTimer() {
+                    this.callDuration = 0;
+                    if (this.timerInterval) clearInterval(this.timerInterval);
+                    this.timerInterval = setInterval(() => {
+                        this.callDuration++;
+                    }, 1000);
+                },
+
+                addTranscript(sender, text, ragContext = null) {
+                    const now = new Date();
+                    const time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                    this.transcripts.push({ sender, text, time, ragContext });
+                    this.$nextTick(() => {
+                        const feed = document.getElementById('transcriptFeed');
+                        if (feed) feed.scrollTop = feed.scrollHeight;
+                    });
+                },
+
+                renderLoop() {
+                    const canvas = document.getElementById('waveformCanvas');
+                    if (!canvas) return;
+                    const ctx = canvas.getContext('2d');
+                    const width = canvas.clientWidth;
+                    const height = canvas.clientHeight;
+                    const centerY = height / 2;
+
+                    ctx.clearRect(0, 0, width, height);
+
+                    // Client VAD Check for Barge-in
+                    if (this.callState === 'speaking' && this.micAnalyser && !this.isMuted) {
+                        const micData = new Uint8Array(this.micAnalyser.fftSize);
+                        this.micAnalyser.getByteTimeDomainData(micData);
+                        let sum = 0;
+                        for (let i = 0; i < micData.length; i++) {
+                            const val = (micData[i] - 128) / 128;
+                            sum += val * val;
+                        }
+                        const rms = Math.sqrt(sum / micData.length);
+                        if (rms > 0.08) {
+                            this.triggerBargeIn();
+                        }
+                    }
+
+                    // Render 4 States
+                    if (this.callState === 'speaking' && this.botAnalyser) {
+                        // State 1. Bot Speaking: Equalizer Bars (Coral to Amber)
+                        const freq = new Uint8Array(this.botAnalyser.frequencyBinCount);
+                        this.botAnalyser.getByteFrequencyData(freq);
+                        const barCount = 36;
+                        const barWidth = (width / barCount) * 0.65;
+                        const gap = (width / barCount) * 0.35;
+
+                        for (let i = 0; i < barCount; i++) {
+                            const val = freq[i * 2] || 0;
+                            const barHeight = Math.max(6, (val / 255) * (height * 0.75));
+                            const x = i * (barWidth + gap) + gap / 2;
+                            const y = centerY - barHeight / 2;
+
+                            const gradient = ctx.createLinearGradient(0, y, 0, y + barHeight);
+                            gradient.addColorStop(0, '#ff6d5a');
+                            gradient.addColorStop(1, '#f59e0b');
+
+                            ctx.fillStyle = gradient;
+                            ctx.beginPath();
+                            ctx.roundRect(x, y, barWidth, barHeight, 4);
+                            ctx.fill();
+                        }
+
+                    } else if (this.callState === 'listening' && this.micAnalyser) {
+                        // State 2. Listening: Smooth Oscilloscope Sine Wave (Emerald)
+                        const timeData = new Uint8Array(this.micAnalyser.fftSize);
+                        this.micAnalyser.getByteTimeDomainData(timeData);
+
+                        ctx.lineWidth = 3;
+                        ctx.strokeStyle = '#10b981';
+                        ctx.shadowColor = '#10b981';
+                        ctx.shadowBlur = 10;
+                        ctx.beginPath();
+
+                        const sliceWidth = width / timeData.length;
+                        let x = 0;
+                        for (let i = 0; i < timeData.length; i++) {
+                            const v = timeData[i] / 128.0;
+                            const y = v * centerY;
+                            if (i === 0) ctx.moveTo(x, y);
+                            else ctx.lineTo(x, y);
+                            x += sliceWidth;
+                        }
+                        ctx.stroke();
+                        ctx.shadowBlur = 0;
+
+                    } else if (this.callState === 'thinking') {
+                        // State 3. Thinking: Harmonic Phase Dual-Sine Waves (Indigo & Coral)
+                        const t = Date.now() * 0.003;
+                        ctx.lineWidth = 2.5;
+
+                        // Sine 1: Indigo
+                        ctx.strokeStyle = '#818cf8';
+                        ctx.beginPath();
+                        for (let x = 0; x < width; x += 4) {
+                            const y = centerY + Math.sin(x * 0.02 + t) * 22;
+                            if (x === 0) ctx.moveTo(x, y);
+                            else ctx.lineTo(x, y);
+                        }
+                        ctx.stroke();
+
+                        // Sine 2: Coral
+                        ctx.strokeStyle = '#ff6d5a';
+                        ctx.beginPath();
+                        for (let x = 0; x < width; x += 4) {
+                            const y = centerY + Math.sin(x * 0.025 - t) * 16;
+                            if (x === 0) ctx.moveTo(x, y);
+                            else ctx.lineTo(x, y);
+                        }
+                        ctx.stroke();
+
+                    } else {
+                        // State 4. Idle / Baseline
+                        ctx.lineWidth = 1.5;
+                        ctx.strokeStyle = '#374151';
+                        ctx.beginPath();
+                        ctx.moveTo(0, centerY);
+                        ctx.lineTo(width, centerY);
+                        ctx.stroke();
+                    }
+
+                    requestAnimationFrame(() => this.renderLoop());
+                }
+            };
+        }
+    </script>
+</body>
+</html>
