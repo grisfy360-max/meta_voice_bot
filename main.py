@@ -787,6 +787,7 @@ class CallSession:
         self.active_task: Optional[asyncio.Task] = None
         self.chat_history: list = []
         self.audio_format: str = "binary"  # 'binary' or 'base64'
+        self.mime_type: str = "audio/webm"
 
 @app.websocket("/ws/live-call")
 async def websocket_live_call_endpoint(websocket: WebSocket):
@@ -819,15 +820,21 @@ async def websocket_live_call_endpoint(websocket: WebSocket):
             await websocket.send_json({"type": "status", "status": "processing"})
             
             # Step 1: Zero-disk inline STT
-            mime_type = "audio/webm"
+            mime_type = getattr(session, "mime_type", "audio/webm")
             if audio_payload.startswith(b"RIFF"):
                 mime_type = "audio/wav"
             elif audio_payload.startswith(b"ID3") or (len(audio_payload) >= 2 and audio_payload[0] == 0xFF):
                 mime_type = "audio/mp3"
+            elif b"ftyp" in audio_payload[:32] or b"moov" in audio_payload[:32]:
+                mime_type = "audio/mp4"
                 
             transcript = await transcribe_audio_bytes(audio_payload, mime_type=mime_type)
             if not transcript:
                 print("[WS Warning] Empty transcript. Resetting to listening.")
+                await websocket.send_json({
+                    "type": "transcript",
+                    "text": "(কথা স্পষ্ট শোনা যায়নি, অনুগ্রহ করে আবার বলুন)"
+                })
                 await websocket.send_json({"type": "status", "status": "listening"})
                 return
                 
@@ -897,6 +904,8 @@ async def websocket_live_call_endpoint(websocket: WebSocket):
                 if msg_type == "init":
                     if payload.get("session_id"):
                         session.session_id = payload["session_id"]
+                    if payload.get("mime_type"):
+                        session.mime_type = payload["mime_type"]
                     if payload.get("audio_format"):
                         session.audio_format = payload["audio_format"]
                     elif payload.get("format"):
@@ -916,6 +925,8 @@ async def websocket_live_call_endpoint(websocket: WebSocket):
                     await cancel_active_turn()
                     
                 elif msg_type in ["audio_end", "user_speech_end"]:
+                    if payload.get("mime_type"):
+                        session.mime_type = payload["mime_type"]
                     if len(session.audio_buffer) > 0:
                         raw_audio = bytes(session.audio_buffer)
                         session.audio_buffer.clear()

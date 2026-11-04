@@ -143,11 +143,19 @@
                     <svg x-show="callState !== 'disconnected'" x-cloak class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 8l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2M5 3a2 2 0 00-2 2v1c0 8.284 6.716 15 15 15h1a2 2 0 002-2v-3.28a1 1 0 00-.684-.948l-4.493-1.498a1 1 0 00-1.21.502l-1.13 2.257a11.042 11.042 0 01-5.516-5.517l2.257-1.128a1 1 0 00.502-1.21L9.228 3.683A1 1 0 008.279 3H5z"></path></svg>
                 </button>
 
+                <!-- Manual Done Speaking / Send Button (When listening) -->
+                <button @click="finishUserTurn()" 
+                        x-show="callState === 'listening'"
+                        class="px-4 py-3 rounded-full border border-emerald-500/50 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 transition flex items-center gap-2 text-xs font-semibold animate-pulse"
+                        title="কথা বলা শেষ হলে সরাসরি উত্তর পেতে চাপুন">
+                    <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+                    <span x-text="isUserSpeaking ? 'কথা শেষ? উত্তর শুনুন' : 'কথা বলা শেষ'"></span>
+                </button>
+
                 <!-- Client Barge-In Button (Tap-to-Interrupt) -->
                 <button @click="triggerBargeIn()" 
-                        :disabled="callState !== 'speaking'"
-                        class="px-4 py-3 rounded-full border transition flex items-center gap-2 text-xs font-semibold disabled:opacity-30 disabled:cursor-not-allowed"
-                        :class="callState === 'speaking' ? 'bg-n8n/15 hover:bg-n8n/25 text-n8n border-n8n/50 n8n-glow animate-pulse' : 'bg-gray-800 text-gray-500 border-gray-700'">
+                        x-show="callState === 'speaking'"
+                        class="px-4 py-3 rounded-full border transition flex items-center gap-2 text-xs font-semibold bg-n8n/15 hover:bg-n8n/25 text-n8n border-n8n/50 n8n-glow animate-pulse">
                     <svg class="w-4 h-4 text-n8n" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                     <span>কথা থামান</span>
                 </button>
@@ -227,6 +235,11 @@
                 activeSourceNodes: [],
                 nextPlayTime: 0,
                 isReceivingAudio: false,
+                incomingAudioChunks: [],
+                currentMimeType: 'audio/webm',
+                isUserSpeaking: false,
+                silenceTimer: null,
+                speechStartTime: 0,
 
                 // WebSocket
                 ws: null,
@@ -242,7 +255,9 @@
 
                 get stagePromptText() {
                     if (this.callState === 'disconnected') return 'কল শুরু করতে নিচের সবুজ বাটনে চাপ দিন';
-                    if (this.callState === 'listening') return 'আপনার প্রশ্ন করুন, আমি মনোযোগ দিয়ে শুনছি...';
+                    if (this.callState === 'listening') {
+                        return this.isUserSpeaking ? 'শুনছি... আপনার প্রশ্ন বলুন' : 'আপনার প্রশ্ন করুন, আমি শুনছি...';
+                    }
                     if (this.callState === 'thinking') return 'নলেজবেস থেকে সঠিক তথ্য যাচাই করা হচ্ছে...';
                     if (this.callState === 'speaking') return 'উত্তর দিচ্ছি... চাইলে যেকোনো মুহূর্তে কথা বলে থামাতে পারেন';
                     return '';
@@ -250,7 +265,9 @@
 
                 get stageSubText() {
                     if (this.callState === 'disconnected') return 'ডেলিভারি চার্জ, প্রোডাক্ট স্টক বা এক্সচেঞ্জ পলিসি সম্পর্কে জিজ্ঞাসা করুন';
-                    if (this.callState === 'listening') return 'কথোপকথন শেষে একটু বিরতি দিন, স্বয়ংক্রিয়ভাবে উত্তর আসবে';
+                    if (this.callState === 'listening') {
+                        return this.isUserSpeaking ? 'কথা শেষে একটু থামুন বা নিচের বাটনে চাপ দিন' : 'কথা বলা শুরু করলেই স্বয়ংক্রিয়ভাবে ডিটেক্ট হবে';
+                    }
                     if (this.callState === 'thinking') return 'ChromaDB ভেক্টর স্টোর ও Gemini Flash সক্রিয়';
                     if (this.callState === 'speaking') return 'ফুল-ডুপ্লেক্স বার্জ-ইন সক্রিয়';
                     return '';
@@ -342,7 +359,7 @@
                                 const msg = JSON.parse(event.data);
                                 this.handleServerMessage(msg);
                             } else if (event.data instanceof ArrayBuffer) {
-                                await this.enqueueAudioBuffer(event.data);
+                                this.incomingAudioChunks.push(event.data);
                             }
                         };
 
@@ -362,12 +379,41 @@
                 },
 
                 startMediaRecorder() {
-                    let mimeType = 'audio/webm;codecs=opus';
-                    if (!MediaRecorder.isTypeSupported(mimeType)) mimeType = 'audio/webm';
+                    if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+                        try { this.mediaRecorder.stop(); } catch (e) {}
+                    }
+                    if (!this.micStream) return;
 
-                    this.mediaRecorder = new MediaRecorder(this.micStream, { mimeType });
+                    let options = {};
+                    const types = [
+                        'audio/webm;codecs=opus',
+                        'audio/webm',
+                        'audio/mp4',
+                        'audio/aac',
+                        'audio/ogg'
+                    ];
+                    for (const t of types) {
+                        if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) {
+                            options = { mimeType: t };
+                            this.currentMimeType = t;
+                            break;
+                        }
+                    }
+
+                    try {
+                        this.mediaRecorder = new MediaRecorder(this.micStream, options);
+                    } catch (e) {
+                        try {
+                            this.mediaRecorder = new MediaRecorder(this.micStream);
+                            this.currentMimeType = this.mediaRecorder.mimeType || 'audio/webm';
+                        } catch (err) {
+                            console.error("Failed to start MediaRecorder:", err);
+                            return;
+                        }
+                    }
+
                     this.mediaRecorder.ondataavailable = (e) => {
-                        if (e.data.size > 0 && this.ws && this.ws.readyState === WebSocket.OPEN && !this.isMuted) {
+                        if (e.data && e.data.size > 0 && this.ws && this.ws.readyState === WebSocket.OPEN && !this.isMuted) {
                             e.data.arrayBuffer().then(buf => {
                                 if (this.ws && this.ws.readyState === WebSocket.OPEN) {
                                     this.ws.send(buf);
@@ -376,6 +422,28 @@
                         }
                     };
                     this.mediaRecorder.start(250); // 250ms chunks for responsive streaming
+                },
+
+                finishUserTurn() {
+                    if (this.callState !== 'listening') return;
+                    if (this.silenceTimer) {
+                        clearTimeout(this.silenceTimer);
+                        this.silenceTimer = null;
+                    }
+                    this.isUserSpeaking = false;
+                    this.callState = 'thinking';
+
+                    if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+                        try { this.mediaRecorder.stop(); } catch (e) {}
+                    }
+
+                    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                        this.ws.send(JSON.stringify({ 
+                            type: 'user_speech_end', 
+                            timestamp: Date.now(),
+                            mime_type: this.currentMimeType
+                        }));
+                    }
                 },
 
                 handleServerMessage(msg) {
@@ -397,56 +465,59 @@
                         this.callState = 'listening';
                     } else if (msg.type === 'audio_end') {
                         this.isReceivingAudio = false;
+                        if (this.incomingAudioChunks.length > 0) {
+                            const fullBlob = new Blob(this.incomingAudioChunks, { type: 'audio/mpeg' });
+                            this.incomingAudioChunks = [];
+                            fullBlob.arrayBuffer().then(buf => {
+                                this.playBotAudioBuffer(buf);
+                            });
+                        }
                     } else if (msg.type === 'audio_chunk' && msg.data) {
-                        // Support JSON base64 audio fallback
                         const binaryStr = atob(msg.data);
                         const len = binaryStr.length;
                         const bytes = new Uint8Array(len);
                         for (let i = 0; i < len; i++) {
                             bytes[i] = binaryStr.charCodeAt(i);
                         }
-                        this.enqueueAudioBuffer(bytes.buffer);
+                        this.incomingAudioChunks.push(bytes.buffer);
                     }
                 },
 
-                async enqueueAudioBuffer(arrayBuffer) {
+                async playBotAudioBuffer(arrayBuffer) {
                     try {
-                        this.isReceivingAudio = true;
                         this.callState = 'speaking';
                         const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
                         const source = this.audioContext.createBufferSource();
                         source.buffer = audioBuffer;
                         source.connect(this.botGainNode);
 
-                        const now = this.audioContext.currentTime;
-                        const startTime = Math.max(now, this.nextPlayTime);
-                        source.start(startTime);
-                        this.nextPlayTime = startTime + audioBuffer.duration;
+                        source.start(0);
                         this.activeSourceNodes.push(source);
 
                         source.onended = () => {
                             this.activeSourceNodes = this.activeSourceNodes.filter(s => s !== source);
-                            if (this.activeSourceNodes.length === 0 && !this.isReceivingAudio) {
+                            if (this.activeSourceNodes.length === 0) {
                                 this.callState = 'listening';
-                                this.nextPlayTime = 0;
+                                this.startMediaRecorder(); // Start fresh recorder for next user turn
                             }
                         };
                     } catch (e) {
-                        console.warn("Decode audio error (partial MP3 frame):", e);
+                        console.error("Error decoding bot audio:", e);
+                        this.callState = 'listening';
+                        this.startMediaRecorder();
                     }
                 },
 
                 triggerBargeIn() {
-                    // 1. Instantly stop all scheduled audio buffer playback
                     this.flushAudioQueue();
+                    this.incomingAudioChunks = [];
 
-                    // 2. Dispatch barge_in to server
                     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
                         this.ws.send(JSON.stringify({ type: 'barge_in', timestamp: Date.now() }));
                     }
 
-                    // 3. Reset state to listening
                     this.callState = 'listening';
+                    this.startMediaRecorder();
                 },
 
                 flushAudioQueue() {
@@ -457,6 +528,7 @@
                         } catch (e) {}
                     }
                     this.activeSourceNodes = [];
+                    this.incomingAudioChunks = [];
                     this.nextPlayTime = 0;
                     this.isReceivingAudio = false;
                 },
@@ -519,6 +591,41 @@
                     const centerY = height / 2;
 
                     ctx.clearRect(0, 0, width, height);
+
+                    // Client VAD Check during Listening State
+                    if (this.callState === 'listening' && this.micAnalyser && !this.isMuted) {
+                        const micData = new Uint8Array(this.micAnalyser.fftSize);
+                        this.micAnalyser.getByteTimeDomainData(micData);
+                        let sum = 0;
+                        for (let i = 0; i < micData.length; i++) {
+                            const val = (micData[i] - 128) / 128;
+                            sum += val * val;
+                        }
+                        const rms = Math.sqrt(sum / micData.length);
+                        
+                        if (rms > 0.032) {
+                            if (!this.isUserSpeaking) {
+                                this.isUserSpeaking = true;
+                                this.speechStartTime = Date.now();
+                            }
+                            if (this.silenceTimer) {
+                                clearTimeout(this.silenceTimer);
+                                this.silenceTimer = null;
+                            }
+                        } else if (this.isUserSpeaking) {
+                            if (!this.silenceTimer) {
+                                this.silenceTimer = setTimeout(() => {
+                                    const speechDuration = Date.now() - this.speechStartTime;
+                                    if (speechDuration >= 600) {
+                                        this.finishUserTurn();
+                                    } else {
+                                        this.isUserSpeaking = false;
+                                    }
+                                    this.silenceTimer = null;
+                                }, 1200); // 1.2s silence detection
+                            }
+                        }
+                    }
 
                     // Client VAD Check for Barge-in
                     if (this.callState === 'speaking' && this.micAnalyser && !this.isMuted) {
