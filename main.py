@@ -1,676 +1,679 @@
-from fastapi.staticfiles import StaticFiles
-
-import os
-
-from fastapi import FastAPI, Request, Response, BackgroundTasks
-
-from fastapi.middleware.cors import CORSMiddleware
-
-from dotenv import load_dotenv
-
-
-
-load_dotenv()
-
-
-
-app = FastAPI(title="Meta Voice Assistant API")
-
-app.mount("/static", StaticFiles(directory="static"), name="static")
-
-
-
-app.add_middleware(
-
-    CORSMiddleware,
-
-    allow_origins=["*"],
-
-    allow_credentials=True,
-
-    allow_methods=["*"],
-
-    allow_headers=["*"],
-
-)
-
-
-
-import json
-from fastapi.responses import HTMLResponse, FileResponse
-
-def get_config():
-    try:
-        with open("config.json", "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return {}
-
-VERIFY_TOKEN = get_config().get("verify_token", "my_verify_token_123")
-ACCESS_TOKEN = os.getenv("META_ACCESS_TOKEN", "")
-
-
-
-
-
-import asyncio
-
-import httpx
-
-
-
-async def keep_alive():
-
-    while True:
-
-        try:
-
-            async with httpx.AsyncClient() as client:
-
-                await client.get("https://meta-voice-bot.onrender.com/")
-
-                print("Pinged self to stay awake")
-
-        except Exception as e:
-
-            print("Self-ping failed:", e)
-
-        await asyncio.sleep(840)  # Ping every 14 minutes (840 seconds)
-
-
-
-@app.on_event("startup")
-
-async def startup_event():
-
-    asyncio.create_task(keep_alive())
-
-
-
-@app.get("/", response_class=HTMLResponse)
-
-def dashboard():
-    return FileResponse("dashboard.html", headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
-
-# Global debug logs
-debug_logs = []
-
-@app.get("/debug")
-def get_debug_logs():
-    return {"logs": debug_logs[-10:]}
-
-
-
-@app.get("/api/config")
-
-def read_config():
-
-    return get_config()
-
-
-
-from pydantic import BaseModel
-
-class PreviewRequest(BaseModel):
-
-    voice: str
-
-    persona: str
-
-
-
-@app.post("/api/preview_voice")
-
-def preview_voice_post(req: PreviewRequest):
-
-    import os
-
-    import time
-
-    from audio_services import text_to_speech
-
-    
-
-    api_key = get_config().get("gemini_api_key", "")
-
-    if not api_key:
-
-        return Response(content="Missing API Key", status_code=500)
-
-        
-
-    text = "à¦¹à§à¦¯à¦¾à¦²à§‹! à¦†à¦®à¦¿ à¦†à¦ªà¦¨à¦¾à¦° à¦à¦†à¦‡ à¦…à§à¦¯à¦¾à¦¸à¦¿à¦¸à§à¦Ÿà§à¦¯à¦¾à¦¨à§à¦Ÿà¥¤ à¦†à¦®à¦¾à¦° à¦­à§Ÿà§‡à¦¸ à¦ à¦¿à¦• à¦à¦°à¦•à¦® à¦¶à§‹à¦¨à¦¾à¦¬à§‡à¥¤"
-
-    file_path = f"preview_{req.voice}_{int(time.time())}.wav"
-
-    
-
-    try:
-
-        audio_path = text_to_speech(text, api_key, file_path, override_voice=req.voice, override_persona=req.persona)
-
-        return FileResponse(audio_path, media_type="audio/wav")
-
-    except Exception as e:
-
-        return Response(content=str(e), status_code=500)
-
-
-
-@app.post("/api/config")
-
-async def update_config(request: Request):
-
-    data = await request.json()
-
-    with open("config.json", "w", encoding="utf-8") as f:
-
-        json.dump(data, f, indent=4)
-
-    return {"status": "success"}
-
-@app.get("/api/knowledge")
-def get_knowledge_api():
-    try:
-        from knowledge_base import DEFAULT_KNOWLEDGE_DOCS
-        items = [{"content": d.page_content, "metadata": d.metadata} for d in DEFAULT_KNOWLEDGE_DOCS]
-        return {"status": "success", "items": items}
-    except Exception as e:
-        return {"status": "error", "message": str(e), "items": []}
-
-@app.post("/api/knowledge/sync")
-def sync_knowledge_api():
-    try:
-        from knowledge_base import seed_knowledge_base
-        seed_knowledge_base()
-        return {"status": "success", "message": "Knowledge base synced to ChromaDB successfully!"}
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
-
-# 1. Webhook Verification (Meta will call this during setup)
-
-@app.get("/webhook")
-
-async def verify_webhook(request: Request):
-
-    mode = request.query_params.get("hub.mode")
-
-    token = request.query_params.get("hub.verify_token")
-
-    challenge = request.query_params.get("hub.challenge")
-
-    
-
-    cfg = get_config()
-
-    current_verify_token = cfg.get("verify_token", VERIFY_TOKEN)
-
-
-
-    if mode and token:
-
-        if mode == "subscribe" and token == current_verify_token:
-
-            print("Webhook Verified successfully!")
-
-            return Response(content=challenge, status_code=200)
-
-    return Response(content="Verification failed", status_code=403)
-
-
-
-from audio_services import download_audio_from_meta, speech_to_text, text_to_speech
-
-from langchain_agent import process_text_with_ai
-
-import json
-
-
-
-# Background task to process incoming voice messages
-
-def process_voice_message(data):
-
-    print("Processing incoming data in background...")
-
-    try:
-
-        cfg = get_config()
-
-    except Exception:
-
-        cfg = {}
-
-    try:
-
-        obj = data.get("object")
-
-        entry = data.get("entry", [])[0]
-
-        
-
-        # ==========================================
-
-        # 1. MESSENGER WEBHOOK
-
-        # ==========================================
-
-        if obj == "page":
-
-            messaging = entry.get("messaging", [])[0]
-
-            sender_id = messaging["sender"]["id"]
-
-            message = messaging.get("message", {})
-
-            
-
-            # Debug the payload
-
-            print(f"DEBUG Messenger payload: {message}")
-
-            
-
-            # Ignore messages sent by the bot itself (echos)
-
-            if message.get("is_echo") or not cfg.get("messenger_active", True):
-
-                print("Ignored echo message from bot.")
-
-                return
-            
-            # Instantly send typing indicator
-            send_typing_on_messenger(sender_id)
-
-
-            
-
-            # Check if it has an audio attachment or text
-
-            attachments = message.get("attachments", [])
-
-            text_body = message.get("text")
-
-            
-
-            if attachments and attachments[0]["type"] == "audio":
-
-                audio_url = attachments[0]["payload"]["url"]
-
-                print(f"Received audio from Messenger user {sender_id}.")
-
-                
-
-                # Download Audio
-
-                input_audio_path = f"incoming_{sender_id}.mp4"
-
-                import requests
-
-                res = requests.get(audio_url)
-
-                with open(input_audio_path, "wb") as f:
-
-                    f.write(res.content)
-
-                
-
-                # Speech to Text, AI, Text to Speech
-
-                user_text = speech_to_text(input_audio_path, get_config().get("gemini_api_key", ""))
-
-                ai_reply = process_text_with_ai(user_text, user_id=sender_id)
-                send_typing_on_messenger(sender_id) # Refresh typing indicator
-                
-                                
-                output_audio_path = f"reply_{sender_id}.wav"
-
-                text_to_speech(ai_reply, get_config().get("gemini_api_key", ""), output_audio_path)
-
-                
-
-                # Send back via Messenger
-
-                send_audio_reply_messenger(sender_id, output_audio_path)
-
-                
-
-                # Cleanup
-
-                if os.path.exists(input_audio_path): os.remove(input_audio_path)
-
-                if os.path.exists(output_audio_path): os.remove(output_audio_path)
-
-            elif attachments and attachments[0]["type"] == "image":
-                image_url = attachments[0]["payload"]["url"]
-                print(f"Received image from Messenger user {sender_id}.")
-                from langchain_agent import process_image_with_ai
-                ai_reply = process_image_with_ai(image_url, user_id=sender_id, custom_prompt=text_body)
-                send_typing_on_messenger(sender_id) # Refresh typing indicator
-                send_text_reply_messenger(sender_id, ai_reply)
-
-            elif text_body:
-
-                print(f"Received text from Messenger user {sender_id}.")
-
-                ai_reply = process_text_with_ai(text_body, user_id=sender_id)
-
-                send_text_reply_messenger(sender_id, ai_reply)
-
-            else:
-
-                print("Messenger message is not audio or text.")
-
-                
-
-        # ==========================================
-
-        # 2. WHATSAPP WEBHOOK
-
-        # ==========================================
-
-        elif obj == "whatsapp_business_account":
-
-            if not cfg.get("whatsapp_active", True):
-
-                print("WhatsApp is disabled via dashboard.")
-
-                return Response(content="EVENT_RECEIVED", status_code=200)
-
-            changes = entry.get("changes", [])[0]
-
-            value = changes.get("value", {})
-
-            
-
-            if "messages" in value:
-
-                message = value["messages"][0]
-
-                phone_number_id = value["metadata"]["phone_number_id"]
-
-                sender_id = message["from"]
-
-                
-
-                if message.get("type") == "audio":
-
-                    media_id = message["audio"]["id"]
-
-                    print(f"Received audio from WhatsApp user {sender_id}.")
-
-                    
-
-                    input_audio_path = f"incoming_{media_id}.ogg"
-
-                    whatsapp_token = get_config().get("whatsapp_token", "")
-
-                    download_audio_from_meta(media_id, whatsapp_token, input_audio_path)
-
-                    
-
-                    user_text = speech_to_text(input_audio_path, get_config().get("gemini_api_key", ""))
-
-                    ai_reply = process_text_with_ai(user_text, user_id=sender_id)
-                    send_typing_on_messenger(sender_id) # Refresh typing indicator
-
-                    
-
-                    output_audio_path = f"reply_{media_id}.wav"
-
-                    text_to_speech(ai_reply, get_config().get("gemini_api_key", ""), output_audio_path)
-
-                    
-
-                    send_audio_reply_whatsapp(phone_number_id, sender_id, output_audio_path)
-
-                    
-
-                    if os.path.exists(input_audio_path): os.remove(input_audio_path)
-
-                    if os.path.exists(output_audio_path): os.remove(output_audio_path)
-
-                elif message.get("type") == "text":
-
-                    text_body = message["text"]["body"]
-
-                    print(f"Received text from WhatsApp user {sender_id}.")
-
-                    ai_reply = process_text_with_ai(text_body, user_id=sender_id)
-
-                    send_text_reply_whatsapp(phone_number_id, sender_id, ai_reply)
-
-                else:
-
-                    print("WhatsApp message is not audio or text.")
-
-                    
-
-    except Exception as e:
-
-        print(f"Error processing message: {e}")
-
-
-
-
-
-
-def send_typing_on_messenger(recipient_id):
-    import requests
-    import os
-    messenger_token = get_config().get("messenger_token", "")
-    if not messenger_token: return
-    url = f"https://graph.facebook.com/v19.0/me/messages?access_token={messenger_token}"
-    payload = {
-        "recipient": {"id": recipient_id},
-        "sender_action": "typing_on"
-    }
-    requests.post(url, json=payload)
-
-def send_text_reply_messenger(recipient_id, text):
-
-    import requests
-
-    import os
-
-    messenger_token = get_config().get("messenger_token", "")
-
-    url = f"https://graph.facebook.com/v19.0/me/messages?access_token={messenger_token}"
-
-    payload = {
-
-        "recipient": {"id": recipient_id},
-
-        "message": {"text": text}
-
-    }
-
-    print("Sending text to Messenger...")
-
-    send_res = requests.post(url, json=payload)
-
-    if send_res.status_code == 200:
-
-        print("Successfully sent text reply to Messenger user!")
-
-    else:
-
-        print("Failed to send text to Messenger:", send_res.text)
-
-
-
-def send_text_reply_whatsapp(phone_number_id, recipient_id, text):
-
-    import requests
-
-    import os
-
-    whatsapp_token = get_config().get("whatsapp_token", "")
-
-    send_url = f"https://graph.facebook.com/v18.0/{phone_number_id}/messages"
-
-    headers = {"Authorization": f"Bearer {whatsapp_token}"}
-
-    payload = {
-
-        "messaging_product": "whatsapp",
-
-        "to": recipient_id,
-
-        "type": "text",
-
-        "text": {"body": text}
-
-    }
-
-    print("Sending text to WhatsApp...")
-
-    send_res = requests.post(send_url, headers=headers, json=payload)
-
-    if send_res.status_code == 200:
-
-        print("Successfully sent text reply to WhatsApp user!")
-
-    else:
-
-        print("Failed to send text to WhatsApp:", send_res.text)
-
-
-
-
-
-def send_audio_reply_messenger(recipient_id, audio_path):
-
-    """Sends audio reply via Facebook Messenger API."""
-
-    import requests
-
-    messenger_token = get_config().get("messenger_token", "")
-
-    url = f"https://graph.facebook.com/v19.0/me/messages?access_token={messenger_token}"
-
-    payload = {
-
-        "recipient": json.dumps({"id": recipient_id}),
-
-        "message": json.dumps({"attachment": {"type": "audio", "payload": {"is_reusable": True}}})
-
-    }
-
-    print("Uploading and sending audio to Messenger...")
-
-    with open(audio_path, "rb") as f:
-
-        files = {"filedata": (audio_path, f, "audio/mpeg")}
-
-        send_res = requests.post(url, data=payload, files=files)
-
-        if send_res.status_code == 200:
-
-            print("Successfully sent voice reply to Messenger user!")
-
-        else:
-
-            print("Failed to send to Messenger:", send_res.text)
-
-
-
-def send_audio_reply_whatsapp(phone_number_id, recipient_id, audio_path):
-
-    """Uploads the generated audio and sends it via WhatsApp Business API."""
-
-    import requests
-
-    whatsapp_token = get_config().get("whatsapp_token", "")
-
-    
-
-    # URL for uploading media
-
-    upload_url = f"https://graph.facebook.com/v18.0/{phone_number_id}/media"
-
-    headers = {"Authorization": f"Bearer {whatsapp_token}"}
-
-    
-
-    print("Uploading audio to Meta...")
-
-    with open(audio_path, "rb") as f:
-
-        files = {
-
-            "file": (audio_path, f, "audio/mpeg"),
-
-            "type": (None, "audio"),
-
-            "messaging_product": (None, "whatsapp")
-
-        }
-
-        upload_res = requests.post(upload_url, headers=headers, files=files)
-
-        
-
-    if upload_res.status_code == 200:
-
-        media_id = upload_res.json().get("id")
-
-        
-
-        # Send the uploaded media to the user
-
-        send_url = f"https://graph.facebook.com/v18.0/{phone_number_id}/messages"
-
-        payload = {
-
-            "messaging_product": "whatsapp",
-
-            "to": recipient_id,
-
-            "type": "audio",
-
-            "audio": {"id": media_id}
-
-        }
-
-        send_res = requests.post(send_url, headers=headers, json=payload)
-
-        if send_res.status_code == 200:
-
-            print("Successfully sent voice reply to user!")
-
-        else:
-
-            print("Failed to send message:", send_res.text)
-
-    else:
-
-        print("Failed to upload media:", upload_res.text)
-
-
-
-# 2. Receive Messages from Meta
-
-@app.post("/webhook")
-
-async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
-    try:
-        data = await request.json()
-        global debug_logs
-        debug_logs.append({"webhook": data})
-        if len(debug_logs) > 50: debug_logs.pop(0)
-        
-        # We send the processing to a background task so Meta gets a fast 200 OK
-        background_tasks.add_task(process_voice_message, data)
-
-        
-
-    except Exception as e:
-
-        print(f"Error parsing webhook data: {e}")
-
-
-
+from fastapi.staticfiles import StaticFiles
+
+import os
+
+from fastapi import FastAPI, Request, Response, BackgroundTasks
+
+from fastapi.middleware.cors import CORSMiddleware
+
+from dotenv import load_dotenv
+
+
+
+load_dotenv()
+
+
+
+app = FastAPI(title="Meta Voice Assistant API")
+
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+
+
+app.add_middleware(
+
+    CORSMiddleware,
+
+    allow_origins=["*"],
+
+    allow_credentials=True,
+
+    allow_methods=["*"],
+
+    allow_headers=["*"],
+
+)
+
+
+
+import json
+from fastapi.responses import HTMLResponse, FileResponse
+
+def get_config():
+    try:
+        with open("config.json", "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+VERIFY_TOKEN = get_config().get("verify_token", "my_verify_token_123")
+ACCESS_TOKEN = os.getenv("META_ACCESS_TOKEN", "")
+
+
+
+
+
+import asyncio
+
+import httpx
+
+
+
+async def keep_alive():
+
+    while True:
+
+        try:
+
+            async with httpx.AsyncClient() as client:
+
+                await client.get("https://meta-voice-bot.onrender.com/")
+
+                print("Pinged self to stay awake")
+
+        except Exception as e:
+
+            print("Self-ping failed:", e)
+
+        await asyncio.sleep(840)  # Ping every 14 minutes (840 seconds)
+
+
+
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(keep_alive())
+    try:
+        from knowledge_base import seed_knowledge_base
+        asyncio.create_task(asyncio.to_thread(seed_knowledge_base))
+    except Exception as e:
+        print(f"[Startup KB Seed Error] {e}")
+
+
+
+@app.get("/", response_class=HTMLResponse)
+
+def dashboard():
+    return FileResponse("dashboard.html", headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
+
+# Global debug logs
+debug_logs = []
+
+@app.get("/debug")
+def get_debug_logs():
+    return {"logs": debug_logs[-10:]}
+
+
+
+@app.get("/api/config")
+
+def read_config():
+
+    return get_config()
+
+
+
+from pydantic import BaseModel
+
+class PreviewRequest(BaseModel):
+
+    voice: str
+
+    persona: str
+
+
+
+@app.post("/api/preview_voice")
+
+def preview_voice_post(req: PreviewRequest):
+
+    import os
+
+    import time
+
+    from audio_services import text_to_speech
+
+    
+
+    api_key = get_config().get("gemini_api_key", "")
+
+    if not api_key:
+
+        return Response(content="Missing API Key", status_code=500)
+
+        
+
+    text = "à¦¹à§à¦¯à¦¾à¦²à§‹! à¦†à¦®à¦¿ à¦†à¦ªà¦¨à¦¾à¦° à¦à¦†à¦‡ à¦…à§à¦¯à¦¾à¦¸à¦¿à¦¸à§à¦Ÿà§à¦¯à¦¾à¦¨à§à¦Ÿà¥¤ à¦†à¦®à¦¾à¦° à¦­à§Ÿà§‡à¦¸ à¦ à¦¿à¦• à¦à¦°à¦•à¦® à¦¶à§‹à¦¨à¦¾à¦¬à§‡à¥¤"
+
+    file_path = f"preview_{req.voice}_{int(time.time())}.wav"
+
+    
+
+    try:
+
+        audio_path = text_to_speech(text, api_key, file_path, override_voice=req.voice, override_persona=req.persona)
+
+        return FileResponse(audio_path, media_type="audio/wav")
+
+    except Exception as e:
+
+        return Response(content=str(e), status_code=500)
+
+
+
+@app.post("/api/config")
+
+async def update_config(request: Request):
+
+    data = await request.json()
+
+    with open("config.json", "w", encoding="utf-8") as f:
+
+        json.dump(data, f, indent=4)
+
+    return {"status": "success"}
+
+@app.get("/api/knowledge")
+def get_knowledge_api():
+    try:
+        from knowledge_base import DEFAULT_KNOWLEDGE_DOCS
+        items = [{"content": d.page_content, "metadata": d.metadata} for d in DEFAULT_KNOWLEDGE_DOCS]
+        return {"status": "success", "items": items}
+    except Exception as e:
+        return {"status": "error", "message": str(e), "items": []}
+
+@app.post("/api/knowledge/sync")
+def sync_knowledge_api():
+    try:
+        from knowledge_base import seed_knowledge_base
+        seed_knowledge_base()
+        return {"status": "success", "message": "Knowledge base synced to ChromaDB successfully!"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+# 1. Webhook Verification (Meta will call this during setup)
+
+@app.get("/webhook")
+
+async def verify_webhook(request: Request):
+
+    mode = request.query_params.get("hub.mode")
+
+    token = request.query_params.get("hub.verify_token")
+
+    challenge = request.query_params.get("hub.challenge")
+
+    
+
+    cfg = get_config()
+
+    current_verify_token = cfg.get("verify_token", VERIFY_TOKEN)
+
+
+
+    if mode and token:
+
+        if mode == "subscribe" and token == current_verify_token:
+
+            print("Webhook Verified successfully!")
+
+            return Response(content=challenge, status_code=200)
+
+    return Response(content="Verification failed", status_code=403)
+
+
+
+from audio_services import download_audio_from_meta, speech_to_text, text_to_speech
+
+from langchain_agent import process_text_with_ai
+
+import json
+
+
+
+# Background task to process incoming voice messages
+
+def process_voice_message(data):
+
+    print("Processing incoming data in background...")
+
+    try:
+
+        cfg = get_config()
+
+    except Exception:
+
+        cfg = {}
+
+    try:
+
+        obj = data.get("object")
+
+        entry = data.get("entry", [])[0]
+
+        
+
+        # ==========================================
+
+        # 1. MESSENGER WEBHOOK
+
+        # ==========================================
+
+        if obj == "page":
+
+            messaging = entry.get("messaging", [])[0]
+
+            sender_id = messaging["sender"]["id"]
+
+            message = messaging.get("message", {})
+
+            
+
+            # Debug the payload
+
+            print(f"DEBUG Messenger payload: {message}")
+
+            
+
+            # Ignore messages sent by the bot itself (echos)
+
+            if message.get("is_echo") or not cfg.get("messenger_active", True):
+
+                print("Ignored echo message from bot.")
+
+                return
+            
+            # Instantly send typing indicator
+            send_typing_on_messenger(sender_id)
+
+
+            
+
+            # Check if it has an audio attachment or text
+
+            attachments = message.get("attachments", [])
+
+            text_body = message.get("text")
+
+            
+
+            if attachments and attachments[0]["type"] == "audio":
+
+                audio_url = attachments[0]["payload"]["url"]
+
+                print(f"Received audio from Messenger user {sender_id}.")
+
+                
+
+                # Download Audio
+
+                input_audio_path = f"incoming_{sender_id}.mp4"
+
+                import requests
+
+                res = requests.get(audio_url)
+
+                with open(input_audio_path, "wb") as f:
+
+                    f.write(res.content)
+
+                
+
+                # Speech to Text, AI, Text to Speech
+
+                user_text = speech_to_text(input_audio_path, get_config().get("gemini_api_key", ""))
+
+                ai_reply = process_text_with_ai(user_text, user_id=sender_id)
+                send_typing_on_messenger(sender_id) # Refresh typing indicator
+                
+                                
+                output_audio_path = f"reply_{sender_id}.wav"
+
+                text_to_speech(ai_reply, get_config().get("gemini_api_key", ""), output_audio_path)
+
+                
+
+                # Send back via Messenger
+
+                send_audio_reply_messenger(sender_id, output_audio_path)
+
+                
+
+                # Cleanup
+
+                if os.path.exists(input_audio_path): os.remove(input_audio_path)
+
+                if os.path.exists(output_audio_path): os.remove(output_audio_path)
+
+            elif attachments and attachments[0]["type"] == "image":
+                image_url = attachments[0]["payload"]["url"]
+                print(f"Received image from Messenger user {sender_id}.")
+                from langchain_agent import process_image_with_ai
+                ai_reply = process_image_with_ai(image_url, user_id=sender_id, custom_prompt=text_body)
+                send_typing_on_messenger(sender_id) # Refresh typing indicator
+                send_text_reply_messenger(sender_id, ai_reply)
+
+            elif text_body:
+
+                print(f"Received text from Messenger user {sender_id}.")
+
+                ai_reply = process_text_with_ai(text_body, user_id=sender_id)
+
+                send_text_reply_messenger(sender_id, ai_reply)
+
+            else:
+
+                print("Messenger message is not audio or text.")
+
+                
+
+        # ==========================================
+
+        # 2. WHATSAPP WEBHOOK
+
+        # ==========================================
+
+        elif obj == "whatsapp_business_account":
+
+            if not cfg.get("whatsapp_active", True):
+
+                print("WhatsApp is disabled via dashboard.")
+
+                return Response(content="EVENT_RECEIVED", status_code=200)
+
+            changes = entry.get("changes", [])[0]
+
+            value = changes.get("value", {})
+
+            
+
+            if "messages" in value:
+
+                message = value["messages"][0]
+
+                phone_number_id = value["metadata"]["phone_number_id"]
+
+                sender_id = message["from"]
+
+                
+
+                if message.get("type") == "audio":
+
+                    media_id = message["audio"]["id"]
+
+                    print(f"Received audio from WhatsApp user {sender_id}.")
+
+                    
+
+                    input_audio_path = f"incoming_{media_id}.ogg"
+
+                    whatsapp_token = get_config().get("whatsapp_token", "")
+
+                    download_audio_from_meta(media_id, whatsapp_token, input_audio_path)
+
+                    
+
+                    user_text = speech_to_text(input_audio_path, get_config().get("gemini_api_key", ""))
+
+                    ai_reply = process_text_with_ai(user_text, user_id=sender_id)
+                    send_typing_on_messenger(sender_id) # Refresh typing indicator
+
+                    
+
+                    output_audio_path = f"reply_{media_id}.wav"
+
+                    text_to_speech(ai_reply, get_config().get("gemini_api_key", ""), output_audio_path)
+
+                    
+
+                    send_audio_reply_whatsapp(phone_number_id, sender_id, output_audio_path)
+
+                    
+
+                    if os.path.exists(input_audio_path): os.remove(input_audio_path)
+
+                    if os.path.exists(output_audio_path): os.remove(output_audio_path)
+
+                elif message.get("type") == "text":
+
+                    text_body = message["text"]["body"]
+
+                    print(f"Received text from WhatsApp user {sender_id}.")
+
+                    ai_reply = process_text_with_ai(text_body, user_id=sender_id)
+
+                    send_text_reply_whatsapp(phone_number_id, sender_id, ai_reply)
+
+                else:
+
+                    print("WhatsApp message is not audio or text.")
+
+                    
+
+    except Exception as e:
+
+        print(f"Error processing message: {e}")
+
+
+
+
+
+
+def send_typing_on_messenger(recipient_id):
+    import requests
+    import os
+    messenger_token = get_config().get("messenger_token", "")
+    if not messenger_token: return
+    url = f"https://graph.facebook.com/v19.0/me/messages?access_token={messenger_token}"
+    payload = {
+        "recipient": {"id": recipient_id},
+        "sender_action": "typing_on"
+    }
+    requests.post(url, json=payload)
+
+def send_text_reply_messenger(recipient_id, text):
+
+    import requests
+
+    import os
+
+    messenger_token = get_config().get("messenger_token", "")
+
+    url = f"https://graph.facebook.com/v19.0/me/messages?access_token={messenger_token}"
+
+    payload = {
+
+        "recipient": {"id": recipient_id},
+
+        "message": {"text": text}
+
+    }
+
+    print("Sending text to Messenger...")
+
+    send_res = requests.post(url, json=payload)
+
+    if send_res.status_code == 200:
+
+        print("Successfully sent text reply to Messenger user!")
+
+    else:
+
+        print("Failed to send text to Messenger:", send_res.text)
+
+
+
+def send_text_reply_whatsapp(phone_number_id, recipient_id, text):
+
+    import requests
+
+    import os
+
+    whatsapp_token = get_config().get("whatsapp_token", "")
+
+    send_url = f"https://graph.facebook.com/v18.0/{phone_number_id}/messages"
+
+    headers = {"Authorization": f"Bearer {whatsapp_token}"}
+
+    payload = {
+
+        "messaging_product": "whatsapp",
+
+        "to": recipient_id,
+
+        "type": "text",
+
+        "text": {"body": text}
+
+    }
+
+    print("Sending text to WhatsApp...")
+
+    send_res = requests.post(send_url, headers=headers, json=payload)
+
+    if send_res.status_code == 200:
+
+        print("Successfully sent text reply to WhatsApp user!")
+
+    else:
+
+        print("Failed to send text to WhatsApp:", send_res.text)
+
+
+
+
+
+def send_audio_reply_messenger(recipient_id, audio_path):
+
+    """Sends audio reply via Facebook Messenger API."""
+
+    import requests
+
+    messenger_token = get_config().get("messenger_token", "")
+
+    url = f"https://graph.facebook.com/v19.0/me/messages?access_token={messenger_token}"
+
+    payload = {
+
+        "recipient": json.dumps({"id": recipient_id}),
+
+        "message": json.dumps({"attachment": {"type": "audio", "payload": {"is_reusable": True}}})
+
+    }
+
+    print("Uploading and sending audio to Messenger...")
+
+    with open(audio_path, "rb") as f:
+
+        files = {"filedata": (audio_path, f, "audio/mpeg")}
+
+        send_res = requests.post(url, data=payload, files=files)
+
+        if send_res.status_code == 200:
+
+            print("Successfully sent voice reply to Messenger user!")
+
+        else:
+
+            print("Failed to send to Messenger:", send_res.text)
+
+
+
+def send_audio_reply_whatsapp(phone_number_id, recipient_id, audio_path):
+
+    """Uploads the generated audio and sends it via WhatsApp Business API."""
+
+    import requests
+
+    whatsapp_token = get_config().get("whatsapp_token", "")
+
+    
+
+    # URL for uploading media
+
+    upload_url = f"https://graph.facebook.com/v18.0/{phone_number_id}/media"
+
+    headers = {"Authorization": f"Bearer {whatsapp_token}"}
+
+    
+
+    print("Uploading audio to Meta...")
+
+    with open(audio_path, "rb") as f:
+
+        files = {
+
+            "file": (audio_path, f, "audio/mpeg"),
+
+            "type": (None, "audio"),
+
+            "messaging_product": (None, "whatsapp")
+
+        }
+
+        upload_res = requests.post(upload_url, headers=headers, files=files)
+
+        
+
+    if upload_res.status_code == 200:
+
+        media_id = upload_res.json().get("id")
+
+        
+
+        # Send the uploaded media to the user
+
+        send_url = f"https://graph.facebook.com/v18.0/{phone_number_id}/messages"
+
+        payload = {
+
+            "messaging_product": "whatsapp",
+
+            "to": recipient_id,
+
+            "type": "audio",
+
+            "audio": {"id": media_id}
+
+        }
+
+        send_res = requests.post(send_url, headers=headers, json=payload)
+
+        if send_res.status_code == 200:
+
+            print("Successfully sent voice reply to user!")
+
+        else:
+
+            print("Failed to send message:", send_res.text)
+
+    else:
+
+        print("Failed to upload media:", upload_res.text)
+
+
+
+# 2. Receive Messages from Meta
+
+@app.post("/webhook")
+
+async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
+    try:
+        data = await request.json()
+        global debug_logs
+        debug_logs.append({"webhook": data})
+        if len(debug_logs) > 50: debug_logs.pop(0)
+        
+        # We send the processing to a background task so Meta gets a fast 200 OK
+        background_tasks.add_task(process_voice_message, data)
+
+        
+
+    except Exception as e:
+
+        print(f"Error parsing webhook data: {e}")
+
+
+
     return Response(content="EVENT_RECEIVED", status_code=200)
 
 
@@ -702,19 +705,20 @@ def live_call_page():
 BENGALI_VOICE_SYSTEM_PROMPT = """You are a warm, polite, and natural conversational Voice AI Customer Support Representative for an e-commerce fashion shop in Bangladesh.
 You are speaking directly with a customer over a live phone call in natural spoken conversational Bengali (বাংলা কথ্য রূপ).
 
+CORE STORE FACTS (ALWAYS TRUTHFUL & ACCURATE):
+- ডেলিভারি চার্জ: ঢাকা সিটির ভেতরে ৬০ টাকা (১-২ কার্যদিবস), ঢাকা সিটির বাইরে সারা বাংলাদেশে ১২০ টাকা (২-৩ কার্যদিবস)। ক্যাশ অন ডেলিভারি সুবিধা আছে (পণ্য দেখে মূল্য পরিশোধ করতে পারবে)।
+- টি-শার্ট ও স্টক: প্রিমিয়াম ব্ল্যাক কটন টি-শার্ট L (Large) সাইজ বর্তমানে রেডি স্টকে আছে (১৫ পিস এভেইলেবল), মূল্য ৪৫০ টাকা। হোয়াইট ও নেভি ব্লু রেগুলার টি-শার্ট ৪৫০ টাকা। ড্রপ-শোল্ডার ওভারসাইজড টি-শার্ট ৫৫০ টাকা।
+- এক্সচেঞ্জ ও রিটার্ন: পণ্য পাওয়ার পর সাইজ সমস্যা বা কোনো ডিফেক্ট থাকলে ৭ দিনের মধ্যে সম্পূর্ণ ফ্রিতে সাইজ এক্সচেঞ্জ সুবিধা পাবেন।
+- অর্ডার গ্রহণ: কলেই অর্ডার কনফার্ম করতে চাইলে গ্রাহকের নাম, মোবাইল নম্বর এবং সম্পূর্ণ ডেলিভারি ঠিকানা জানতে চাইবেন।
+
 CRITICAL VOICE CALL RULES:
-1. CONVERSATIONAL BREVITY: Keep every response short and concise (strictly 1 to 3 spoken sentences maximum). The customer is listening to audio over the phone, not reading text.
+1. CONVERSATIONAL BREVITY: Keep every response short and concise (strictly 1 to 2 spoken sentences maximum). The customer is listening to audio over the phone, not reading text.
 2. ZERO MARKDOWN / FORMATTING: Absolutely NEVER use markdown formatting, asterisks (**), bullet points (*, -), hashes (#), or numbered lists (1., 2.). TTS synthesizers will speak punctuation aloud if you include markdown. Write pure flowing spoken text only.
-3. CULTURAL GREETINGS:
-   - On the very first greeting of the call, greet politely with 'আসসালামু আলাইকুম' or 'হ্যালো'.
+3. DIRECT ANSWERS: When the customer asks about delivery charges, stock, price, or ordering, answer directly using the CORE STORE FACTS and Store Knowledge Context below without any delay.
+4. CULTURAL GREETINGS:
+   - On the very first greeting of the call, greet politely with 'আসসালামু আলাইকুম' or 'হ্যালো'।
    - Once the call is ongoing, NEVER repeat greetings. Answer directly and naturally.
-4. KNOWLEDGE GROUNDING:
-   - Base all answers strictly on the provided Store Knowledge Context below.
-   - Premium Black Cotton T-Shirt L size is in stock (15 pcs available), price is 450 BDT.
-   - Delivery charges: 60 BDT inside Dhaka (1-2 days), 120 BDT outside Dhaka (2-3 days). Cash on delivery available.
-   - Size exchange policy: 7 days free size exchange.
-   - When a customer expresses interest or asks to buy/order, politely invite them: 'অর্ডারটি কনফার্ম করতে আপনার নাম, মোবাইল নম্বর এবং সম্পূর্ণ ডেলিভারি ঠিকানাটি দিন।'
-5. UNKNOWN QUESTIONS: If a question is not covered in the context, politely apologize in sweet Bengali and offer to connect them with a human supervisor.
+5. ORDER INVITE: When a customer expresses interest or asks to buy/order, politely invite them: 'অর্ডারটি কনফার্ম করতে আপনার নাম, মোবাইল নম্বর এবং সম্পূর্ণ ডেলিভারি ঠিকানাটি বলুন।'
 
 Store Knowledge Context:
 {context}"""
@@ -772,16 +776,22 @@ async def generate_voice_response(
                         model=model_name,
                         contents=full_prompt
                     ),
-                    timeout=2.5
+                    timeout=5.0
                 )
                 if response and response.text and response.text.strip():
                     cleaned = clean_voice_text(response.text.strip())
                     return cleaned, formatted_context
             except Exception as e:
                 print(f"[LLM Warning] Model {model_name} attempt {attempt+1} failed: {e}")
-                await asyncio.sleep(0.3)
+                await asyncio.sleep(0.2)
                 
-    fallback_text = "জি, আমি আপনার বিষয়টি বুঝতে পেরেছি। আপনাকে কিভাবে আরও সহায়তা করতে পারি?"
+    q_low = (query or "").lower()
+    if any(w in q_low for w in ["ডেলিভারি", "চার্জ", "খরচ", "delivery", "charge", "shipping"]):
+        fallback_text = "আমাদের ডেলিভারি চার্জ ঢাকার ভেতরে ৬০ টাকা এবং ঢাকার বাইরে ১২০ টাকা। হোম ডেলিভারিতে পণ্য দেখে টাকা পরিশোধ করতে পারবেন।"
+    elif any(w in q_low for w in ["টি-শার্ট", "টি শার্ট", "কটন", "সাইজ", "স্টক", "দাম", "প্রাইস"]):
+        fallback_text = "জি, প্রিমিয়াম ব্ল্যাক কটন টি-শার্টের এল সাইজ স্টকে এভেইলেবল আছে, মূল্য ৪৫০ টাকা। অর্ডার করতে আপনার নাম ও ঠিকানা বলুন।"
+    else:
+        fallback_text = "জি, আমি শুনতে পাচ্ছি। আমি আপনাকে কিভাবে সহায়তা করতে পারি বলুন?"
     return fallback_text, formatted_context
 
 class CallSession:
@@ -984,35 +994,35 @@ async def websocket_live_call_endpoint(websocket: WebSocket):
     finally:
         if session.active_task and not session.active_task.done():
             session.active_task.cancel()
-
-
-
-
-if __name__ == "__main__":
-
-    import uvicorn
-
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+
+
+
+
+if __name__ == "__main__":
+
+    import uvicorn
+
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
