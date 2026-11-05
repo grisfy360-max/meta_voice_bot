@@ -714,7 +714,7 @@
                         }
                         const rms = Math.sqrt(sum / micData.length);
                         
-                        if (rms > 0.032) {
+                        if (rms > 0.016) {
                             if (!this.isUserSpeaking) {
                                 this.isUserSpeaking = true;
                                 this.speechStartTime = Date.now();
@@ -727,13 +727,13 @@
                             if (!this.silenceTimer) {
                                 this.silenceTimer = setTimeout(() => {
                                     const speechDuration = Date.now() - this.speechStartTime;
-                                    if (speechDuration >= 250) {
+                                    if (speechDuration >= 200) {
                                         this.finishUserTurn();
                                     } else {
                                         this.isUserSpeaking = false;
                                     }
                                     this.silenceTimer = null;
-                                }, 1200); // 1.2s silence detection
+                                }, 420); // 420ms natural human silence cutoff
                             }
                         }
                     }

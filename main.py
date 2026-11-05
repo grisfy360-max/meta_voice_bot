@@ -763,16 +763,16 @@ async def generate_voice_response(
     
     full_prompt = "\n\n".join(messages)
     
-    candidate_models = ["gemini-3.8-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-flash-lite-latest", "gemini-2.5-flash"]
+    candidate_models = ["gemini-3.1-flash-lite", "gemini-2.5-flash-lite", "gemini-3.5-flash-lite", "gemini-2.5-flash"]
     for model_name in candidate_models:
-        for attempt in range(2):
+        for attempt in range(1):
             try:
                 response = await asyncio.wait_for(
                     client.aio.models.generate_content(
                         model=model_name,
                         contents=full_prompt
                     ),
-                    timeout=12.0
+                    timeout=2.5
                 )
                 if response and response.text and response.text.strip():
                     cleaned = clean_voice_text(response.text.strip())

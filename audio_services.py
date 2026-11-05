@@ -169,10 +169,9 @@ async def transcribe_audio_bytes(audio_bytes: bytes, mime_type: str = "audio/web
         base_mime = "audio/webm"
 
     candidate_models = [
-        "gemini-3.8-flash",
-        "gemini-3.5-flash",
+        "gemini-3.1-flash-lite",
+        "gemini-2.5-flash-lite",
         "gemini-3.5-flash-lite",
-        "gemini-flash-lite-latest",
         "gemini-2.5-flash"
     ]
     for model_name in candidate_models:
@@ -185,7 +184,7 @@ async def transcribe_audio_bytes(audio_bytes: bytes, mime_type: str = "audio/web
                         stt_prompt
                     ]
                 ),
-                timeout=12.0
+                timeout=3.5
             )
             transcript = response.text.strip() if response and response.text else ""
             if transcript:
